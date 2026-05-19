@@ -8,6 +8,7 @@
     "venice-models": "./venice/get-models.js",
     "venice-video": "./venice/video.js",
     "wavespeed": "./wavespeed/index.js",
+    "imagine": "./xai/index.js",
     "wave-replay": "./tools/replay.js",
     "wave-balance": "./tools/balance.js",
     "wan2.6-flash": "./venice/wan26-flash.js"

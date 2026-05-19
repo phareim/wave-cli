@@ -14,6 +14,7 @@ const SOURCES = {
   "venice":       { bin: "venice",       script: "venice/index.js" },
   "venice-video": { bin: "venice-video", script: "venice/video.js" },
   "wavespeed":    { bin: "wavespeed",    script: "wavespeed/index.js" },
+  "xai":          { bin: "imagine",      script: "xai/index.js" },
 };
 
 const MEDIA_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".webm"]);
@@ -77,6 +78,16 @@ const buildVeniceVideoArgs = (m) => {
   return args;
 };
 
+const buildXaiArgs = (m) => {
+  const args = [];
+  push(args, "--model", m.model_key || m.model);
+  push(args, "--prompt", m.prompt);
+  push(args, "--n", m.n);
+  push(args, "--aspect-ratio", m.aspect_ratio);
+  push(args, "--resolution", m.resolution);
+  return args;
+};
+
 const buildWavespeedArgs = (m) => {
   const args = [];
   push(args, "--model", m.model_key || m.model);
@@ -110,6 +121,7 @@ const reconstruct = (metadata) => {
     case "venice":       args = buildVeniceArgs(metadata); break;
     case "venice-video": args = buildVeniceVideoArgs(metadata); break;
     case "wavespeed":    args = buildWavespeedArgs(metadata); break;
+    case "xai":          args = buildXaiArgs(metadata); break;
   }
   return { target, args };
 };

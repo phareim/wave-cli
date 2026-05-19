@@ -31,7 +31,7 @@ node wavespeed/index.js --prompt "your prompt here"
 
 ### Module Independence
 
-Each service module (`venice/`, `wavespeed/`) is completely self-contained with no cross-dependencies. Each has evolved its own structure based on its specific needs:
+Each service module (`venice/`, `wavespeed/`, `xai/`) is completely self-contained with no cross-dependencies. Each has evolved its own structure based on its specific needs:
 
 **Venice structure:**
 ```
@@ -58,12 +58,30 @@ wavespeed/
 ├── utils.js                # File I/O, HTTP requests, image saving
 ```
 
+**xai structure (direct x.ai images/generations, "imagine"):**
+```
+xai/
+├── index.js   # CLI entry point + orchestration (single POST, JSON response, b64_json decoded per image)
+├── cli.js     # Commander.js CLI setup. Five user-facing flags only: --prompt/--file, --model, --n, --aspect-ratio, --resolution
+├── config.js  # Defaults: model `grok-imagine-image-quality`, n 1, aspect-ratio 1:1, resolution 1k
+└── utils.js   # saveImage, saveMetadata, getXaiPath — duplicated from venice/utils.js per the module-independence rule
+```
+
+xai notes:
+- The endpoint always returns JSON; `imagine` requests `response_format: "b64_json"` and decodes each `data[i].b64_json` into a Buffer. The output file extension is derived from `data[i].mime_type` (defaulting to `.jpg` because `grok-imagine-image-quality` returns `image/jpeg`).
+- `--n > 1` produces multiple files `xai_<ts>_<i>.<ext>`, each with its own per-image sidecar. Each per-image sidecar records `n: 1` (it represents one image) plus `image_index` and `requested_n` (audit-only) so `wave-replay` reproduces a single-image invocation, not the original N-image batch.
+- Cost is read from `response.usage.cost_in_usd_ticks` (1 tick = 1e-8 USD) and surfaced both on stdout (`Cost: $0.0200`) and in the sidecar as `cost_ticks` + `cost_usd`.
+- No `--seed`, `--steps`, `--cfg-scale`, `--negative-prompt`, `--variants`, `--width/--height`, `--format`, or `--keywords*` — the x.ai endpoint doesn't accept them and the user explicitly wanted a tight surface.
+- API key strictly via `XAI_API_KEY` env var; never via a flag (would leak to shell history and sidecars).
+- Smoke mode: `XAI_SMOKE_TEST=1` short-circuits the live request with a JSON mock that mirrors the real shape (b64_json, mime_type, revised_prompt, usage.cost_in_usd_ticks).
+
 ### CLI Entry Points (package.json bin)
 
 - `venice` → `venice/index.js` (image generation)
 - `venice-models` → `venice/get-models.js` (refresh image model catalog)
 - `venice-video` → `venice/video.js` (WAN 2.7 video generation)
 - `wavespeed` → `wavespeed/index.js` (image + video generation)
+- `imagine` → `xai/index.js` (direct x.ai images/generations endpoint, a.k.a. Grok Imagine). Distinct from `wavespeed --model grok-2-image`, which is the Wavespeed-proxied path; `imagine` talks to api.x.ai directly using `XAI_API_KEY`.
 - `wave-replay` → `tools/replay.js` (reconstruct or re-run a CLI invocation from a sidecar)
 - `wave-balance` → `tools/balance.js` (show current Venice + Wavespeed account balance; `--json`, `--venice-only`, `--wavespeed-only`)
 - `wan2.6-flash` → `venice/wan26-flash.js` (Venice Wan 2.6 Flash image-to-video; positional `<image>` accepts a local path or https URL — local files are read and inlined as a base64 data URI in `image_url`. Defaults: `--prompt "animate"`, `--duration 5s`, `--resolution 720p`. Model rejects `seed` so none is sent.)
@@ -103,6 +121,7 @@ Both services require environment variables set before use:
 
 - `VENICE_API_TOKEN` - Bearer token for Venice.ai
 - `WAVESPEED_KEY` - API key for Wavespeed.ai
+- `XAI_API_KEY` - Bearer token for api.x.ai (used by `imagine`)
 
 These must be set in the shell environment, not hardcoded.
 
@@ -111,6 +130,7 @@ These must be set in the shell environment, not hardcoded.
 - Venice images: `./images/venice/` or `$VENICE_PATH` if set
 - Venice videos: `./videos/venice/` or `$VENICE_VIDEO_PATH` if set
 - Wavespeed (images + videos): `./images/` or `$WAVESPEED_PATH` if set
+- xai images: `./images/xai/` or `$XAI_PATH` if set
 
 File naming: images use `<source>_<timestamp>.png` or a URL-derived name; videos use `venice_<queue_id>.mp4` (Venice) or the `.mp4` URL-derived name (Wavespeed).
 

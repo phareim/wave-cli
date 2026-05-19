@@ -497,3 +497,150 @@ test("wavespeed smoke test with optimize flag", () => {
     removeDir(outputDir);
   }
 });
+
+test("imagine smoke test saves mocked image output", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xai-smoke-"));
+  try {
+    runCli(
+      ["xai/index.js", "--prompt", "smoke test"],
+      {
+        XAI_API_KEY: "test-token",
+        XAI_SMOKE_TEST: "1",
+        XAI_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const imageFile = files.find((file) => file.startsWith("xai_") && file.endsWith(".jpg"));
+    assert(imageFile, "Expected xai output file with .jpg extension");
+
+    const sidecar = imageFile.replace(/\.jpg$/, ".json");
+    assert(files.includes(sidecar), "Expected xai metadata sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    assert.equal(metadata.source, "xai");
+    assert.equal(metadata.kind, "image");
+    assert.equal(metadata.prompt, "smoke test");
+    assert.equal(metadata.n, 1, "Per-image sidecar should record n: 1");
+    assert.equal(metadata.cost_ticks, 200000000);
+    assert.equal(metadata.cost_usd, 0.02);
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("imagine --n 3 produces three files with per-image sidecars", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xai-n-"));
+  try {
+    runCli(
+      ["xai/index.js", "--prompt", "smoke test", "--n", "3"],
+      {
+        XAI_API_KEY: "test-token",
+        XAI_SMOKE_TEST: "1",
+        XAI_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const images = files.filter((f) => f.endsWith(".jpg")).sort();
+    assert.equal(images.length, 3, `Expected 3 images, got ${images.length}: ${images.join(", ")}`);
+    for (const img of images) {
+      assert.match(img, /^xai_\d+_[123]\.jpg$/, `Image filename ${img} should include index suffix`);
+    }
+
+    const sidecars = files.filter((f) => f.endsWith(".json")).sort();
+    assert.equal(sidecars.length, 3, "Expected 3 per-image sidecars");
+    const indices = sidecars.map((s) => JSON.parse(fs.readFileSync(path.join(outputDir, s), "utf8")));
+    for (const meta of indices) {
+      assert.equal(meta.source, "xai");
+      assert.equal(meta.n, 1, "Per-image sidecar should record n: 1");
+      assert.equal(meta.requested_n, 3, "Per-image sidecar should record requested_n: 3");
+      assert(meta.image_index >= 1 && meta.image_index <= 3, `image_index out of range: ${meta.image_index}`);
+    }
+    const seenIndices = new Set(indices.map((m) => m.image_index));
+    assert.equal(seenIndices.size, 3, "Each image_index should appear once");
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("imagine --no-metadata skips sidecar", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xai-nometa-"));
+  try {
+    runCli(
+      ["xai/index.js", "--prompt", "smoke test", "--no-metadata"],
+      {
+        XAI_API_KEY: "test-token",
+        XAI_SMOKE_TEST: "1",
+        XAI_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    assert(files.some((file) => file.endsWith(".jpg")), "Expected xai output file");
+    assert(!files.some((file) => file.endsWith(".json")), "Expected no sidecar with --no-metadata");
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("imagine reads prompt from ./prompt.txt when no --prompt or --file given", () => {
+  const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), "xai-prompt-txt-"));
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "xai-prompt-txt-out-"));
+  try {
+    fs.writeFileSync(path.join(cwdDir, "prompt.txt"), "from prompt txt");
+    const result = spawnSync("node", [path.join(repoRoot, "xai/index.js")], {
+      cwd: cwdDir,
+      env: {
+        ...process.env,
+        XAI_API_KEY: "test-token",
+        XAI_SMOKE_TEST: "1",
+        XAI_PATH: outputDir,
+        NODE_ENV: "test"
+      },
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 0, `CLI exited with ${result.status}\nSTDERR:\n${result.stderr}`);
+
+    const files = fs.readdirSync(outputDir);
+    const sidecar = files.find((f) => f.endsWith(".json"));
+    assert(sidecar, "Expected sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    assert.equal(metadata.prompt, "from prompt txt");
+  } finally {
+    removeDir(cwdDir);
+    removeDir(outputDir);
+  }
+});
+
+test("wave-replay reconstructs imagine command from xai sidecar", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-replay-xai-"));
+  try {
+    const sidecar = path.join(tmpDir, "xai_1.json");
+    fs.writeFileSync(sidecar, JSON.stringify({
+      source: "xai",
+      kind: "image",
+      model: "grok-imagine-image-quality",
+      model_key: "grok-imagine-image-quality",
+      prompt: "a glossy portrait",
+      aspect_ratio: "1:2",
+      resolution: "1k",
+      n: 1,
+      image_index: 2,
+      requested_n: 3
+    }));
+
+    const result = runCli(["tools/replay.js", sidecar]);
+    const out = result.stdout.trim();
+    assert.match(out, /^imagine /);
+    assert.match(out, /--model grok-imagine-image-quality/);
+    assert.match(out, /--prompt 'a glossy portrait'/);
+    assert.match(out, /--n 1/, "Replay should reproduce ONE image, not the original --n 3");
+    assert.match(out, /--aspect-ratio 1:2/);
+    assert.match(out, /--resolution 1k/);
+  } finally {
+    removeDir(tmpDir);
+  }
+});
