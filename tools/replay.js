@@ -13,7 +13,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const SOURCES = {
   "venice":       { bin: "venice",       script: "venice/index.js" },
   "venice-video": { bin: "venice-video", script: "venice/video.js" },
-  "wavespeed":    { bin: "wavespeed",    script: "wavespeed/index.js" },
+  "wavespeed":    { bin: "wave",         script: "wavespeed/index.js" },
   "xai":          { bin: "imagine",      script: "xai/index.js" },
 };
 

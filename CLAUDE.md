@@ -80,8 +80,8 @@ xai notes:
 - `venice` → `venice/index.js` (image generation)
 - `venice-models` → `venice/get-models.js` (refresh image model catalog)
 - `venice-video` → `venice/video.js` (WAN 2.7 video generation)
-- `wavespeed` → `wavespeed/index.js` (image + video generation)
-- `imagine` → `xai/index.js` (direct x.ai images/generations endpoint, a.k.a. Grok Imagine). Distinct from `wavespeed --model grok-2-image`, which is the Wavespeed-proxied path; `imagine` talks to api.x.ai directly using `XAI_API_KEY`.
+- `wave` → `wavespeed/index.js` (image + video generation; renamed from `wavespeed` 2026-07-12 so the official `@wavespeed/cli` can own that name globally)
+- `imagine` → `xai/index.js` (direct x.ai images/generations endpoint, a.k.a. Grok Imagine). Distinct from `wave --model grok-2-image`, which is the Wavespeed-proxied path; `imagine` talks to api.x.ai directly using `XAI_API_KEY`.
 - `wave-replay` → `tools/replay.js` (reconstruct or re-run a CLI invocation from a sidecar)
 - `wave-balance` → `tools/balance.js` (show current Venice + Wavespeed account balance; `--json`, `--venice-only`, `--wavespeed-only`)
 - `wan2.6-flash` → `venice/wan26-flash.js` (Venice Wan 2.6 Flash image-to-video; positional `<image>` accepts a local path or https URL — local files are read and inlined as a base64 data URI in `image_url`. Defaults: `--prompt "animate"`, `--duration 5s`, `--resolution 720p`. Model rejects `seed` so none is sent.)

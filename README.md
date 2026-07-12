@@ -47,11 +47,11 @@ venice --prompt "Portrait" --model qwen-image --variants 4 --output-format png
 
 **Note:** Images are automatically constrained to dimensions divisible by 16 (model requirement), with a maximum of 1280x1280.
 
-**Keyword-based prompts:** Both `venice` and `wavespeed` support `--keywords` — when set, the CLI calls Venice's chat completions endpoint (always Venice, even from the wavespeed CLI) with the supplied text model and asks it to expand the keywords into a vivid one-paragraph image prompt at the chosen rating, then uses that prompt for generation. The keywords, rating, and text model are recorded in the sidecar alongside the final prompt. The wavespeed variant requires `VENICE_API_TOKEN` in addition to `WAVESPEED_KEY`.
+**Keyword-based prompts:** Both `venice` and `wave` support `--keywords` — when set, the CLI calls Venice's chat completions endpoint (always Venice, even from the wave CLI) with the supplied text model and asks it to expand the keywords into a vivid one-paragraph image prompt at the chosen rating, then uses that prompt for generation. The keywords, rating, and text model are recorded in the sidecar alongside the final prompt. The wave variant requires `VENICE_API_TOKEN` in addition to `WAVESPEED_KEY`.
 
 ```bash
 venice    --keywords "neon alley, woman in trench coat, rain" --keyword-rating PG13
-wavespeed --keywords "ferns, dew, morning light" --keyword-rating G --keyword-model llama-3.3-70b
+wave --keywords "ferns, dew, morning light" --keyword-rating G --keyword-model llama-3.3-70b
 ```
 
 ### Venice Models (`venice-models`)
@@ -63,19 +63,19 @@ venice-models  # Updates venice/models.json with latest models
 
 ---
 
-### Wavespeed AI (`wavespeed`)
+### Wavespeed AI (`wave`)
 Generate high-quality images using Wavespeed AI's fast and powerful models, including FLUX.2, Seedream, and more.
 
 #### Basic Usage
 
 ```bash
 # Basic image generation (default model: z-image-turbo)
-wavespeed --prompt "A futuristic cityscape at dusk"
+wave --prompt "A futuristic cityscape at dusk"
 
 # Using specific models
-wavespeed --model flux2 --prompt "Photorealistic portrait"
-wavespeed --model seedream --prompt "High quality landscape"
-wavespeed --model grok --prompt "Product photography shot"
+wave --model flux2 --prompt "Photorealistic portrait"
+wave --model seedream --prompt "High quality landscape"
+wave --model grok --prompt "Product photography shot"
 ```
 
 #### Available Models
@@ -94,18 +94,18 @@ Wavespeed includes a built-in prompt optimizer that enhances your prompts before
 
 ```bash
 # Basic optimization
-wavespeed --prompt "woman walking" --optimize
+wave --prompt "woman walking" --optimize
 
 # Optimization for video prompts
-wavespeed --prompt "city scene" --optimize --optimize-mode video
+wave --prompt "city scene" --optimize --optimize-mode video
 
 # Style-specific optimization
-wavespeed --prompt "portrait shot" --optimize --optimize-style photographic
-wavespeed --prompt "fantasy art" --optimize --optimize-style artistic
-wavespeed --prompt "anime character" --optimize --optimize-style anime
+wave --prompt "portrait shot" --optimize --optimize-style photographic
+wave --prompt "fantasy art" --optimize --optimize-style artistic
+wave --prompt "anime character" --optimize --optimize-style anime
 
 # With reference image
-wavespeed --prompt "similar style" --optimize --optimize-image https://example.com/reference.jpg
+wave --prompt "similar style" --optimize --optimize-image https://example.com/reference.jpg
 ```
 
 **Optimization Modes:** `image` (default), `video`
@@ -115,23 +115,23 @@ wavespeed --prompt "similar style" --optimize --optimize-image https://example.c
 
 ```bash
 # Custom image sizes
-wavespeed --prompt "Mountain landscape" --format 1920*1080
-wavespeed --prompt "Square image" --format square_hd
+wave --prompt "Mountain landscape" --format 1920*1080
+wave --prompt "Square image" --format square_hd
 
 # Multiple generations
-wavespeed --prompt "A magical landscape" --count 4
+wave --prompt "A magical landscape" --count 4
 
 # With seed for reproducibility
-wavespeed --prompt "A magical landscape" --seed 12345
+wave --prompt "A magical landscape" --seed 12345
 
 # Synchronous mode (wait for result in single response)
-wavespeed --prompt "Quick test" --sync
+wave --prompt "Quick test" --sync
 
 # Save to current directory
-wavespeed --prompt "Local save" --out
+wave --prompt "Local save" --out
 
 # Debug mode
-wavespeed --prompt "Test" --debug
+wave --prompt "Test" --debug
 ```
 
 **Options:**
@@ -180,7 +180,7 @@ venice --prompt "A serene landscape"
 
 # Opt out if you don't want sidecars
 venice --prompt "A serene landscape" --no-metadata
-wavespeed --prompt "A futuristic city" --no-metadata
+wave --prompt "A futuristic city" --no-metadata
 venice-video --prompt "drone shot over forest" --no-metadata
 ```
 
@@ -213,7 +213,7 @@ echo "A serene mountain landscape at sunset" > prompt.txt
 
 # Generate without --prompt flag (uses prompt.txt)
 venice
-wavespeed
+wave
 ```
 
 This approach is useful for:
@@ -227,7 +227,7 @@ This approach is useful for:
 Enable verbose logging with the `--debug` flag:
 ```bash
 venice --prompt "test" --debug
-wavespeed --prompt "test" --debug
+wave --prompt "test" --debug
 ```
 
 ### Upload to aiwdm
@@ -236,7 +236,7 @@ Both CLIs can push the generated image straight into the [aiwdm](https://github.
 
 ```bash
 venice --prompt "A serene mountain" --aiwdm
-wavespeed --prompt "A futuristic city" --aiwdm --aiwdm-rating G --aiwdm-tags "scifi,city"
+wave --prompt "A futuristic city" --aiwdm --aiwdm-rating G --aiwdm-tags "scifi,city"
 ```
 
 The prompt is passed to `aiwdm upload --prompt …` as the description (skipping AI description generation). A source tag (`venice` or `wavespeed`) is always added; `--aiwdm-tags` appends extras.

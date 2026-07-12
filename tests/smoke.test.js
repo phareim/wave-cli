@@ -335,7 +335,7 @@ test("wave-replay finds sidecar when given media file path", () => {
 
     const result = runCli(["tools/replay.js", mediaPath]);
     const out = result.stdout.trim();
-    assert.match(out, /^wavespeed /);
+    assert.match(out, /^wave /);
     // Replays the post-optimization prompt, not the original — optimizer is non-deterministic.
     assert.match(out, /--prompt 'Optimized: a cat'/);
     assert.doesNotMatch(out, /--optimize\b/);
