@@ -8,10 +8,8 @@ import {
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
-  DEFAULT_STEPS,
   DEFAULT_CFG_SCALE,
   DEFAULT_FORMAT,
-  DEFAULT_VARIANTS,
   stylePresets as fallbackStylePresets,
   image_size
 } from "./config.js";
@@ -23,138 +21,34 @@ export function setupCLI() {
   const program = new Command();
 
   program
+    .name("venice")
     .version("1.0.0")
-    .description(
-      "This script generates images using the Venice AI image generation API."
-    )
-    .option(
-      "--prompt <text>",
-      "Specify the text prompt for image generation."
-    )
-    .option(
-      "--file <path>",
-      "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)"
-    )
-    .option(
-      "--negative-prompt <text>",
-      "Specify a negative prompt to guide what not to generate."
-    )
-    .option(
-      "--model <modelKey>",
-      "Choose the AI model to use.",
-      defaultModel
-    )
-    .option(
-      "--format <formatKey>", 
-      "Specify image size/format."
-    )
-    .option(
-      "--width <number>", 
-      "Image width", 
-      parseFloat,
-      DEFAULT_WIDTH
-    )
-    .option(
-      "--height <number>", 
-      "Image height", 
-      parseFloat,
-      DEFAULT_HEIGHT
-    )
-    .option(
-      "--steps <number>", 
-      "Number of inference steps", 
-      parseFloat,
-      DEFAULT_STEPS
-    )
-    .option(
-      "--cfg-scale <number>", 
-      "Classifier-free guidance scale", 
-      parseFloat,
-      DEFAULT_CFG_SCALE
-    )
-    .option(
-      "--seed <number>", 
-      "Random seed for reproducibility",
-      parseFloat
-    )
-    .option(
-      "--lora <key>",
-      "Apply a LoRA (Venice style preset) to the generation"
-    )
-    .option(
-      "--random-lora",
-      "Randomly select a LoRA (style preset) to apply"
-    )
-    .option(
-      "--output-format <format>",
-      "Image output format (jpeg, png, webp)",
-      DEFAULT_FORMAT
-    )
-    .option(
-      "--variants <number>",
-      "Number of image variants to generate (1-4, only works when return-binary is false)",
-      parseFloat,
-      DEFAULT_VARIANTS
-    )
-    .option(
-      "--out",
-      "Save images to the current directory instead of the default folder."
-    )
-    .option(
-      "--lora-strength <number>",
-      "LoRA strength (0-100)",
-      parseFloat
-    )
-    .option(
-      "--embed-exif-metadata",
-      "Embed generation parameters in image EXIF metadata"
-    )
-    .option(
-      "--hide-watermark",
-      "Hide watermark in generated image"
-    )
-    .option(
-      "--return-binary",
-      "Return image as binary data"
-    )
-    .option(
-      "--local",
-      "Skip uploading to the aiwdm media library; only save locally."
-    )
-    .option(
-      "--aiwdm-rating <rating>",
-      "Rating passed to aiwdm upload (G, PG, PG13, R).",
-      "R"
-    )
-    .option(
-      "--aiwdm-tags <tags>",
-      "Extra comma-separated tags passed to aiwdm upload (source tag `venice` is always added)."
-    )
-    .option(
-      "--no-metadata",
-      "Skip recording generation metadata (uploaded to aiwdm by default; written as a local sidecar with --local)."
-    )
-    .option(
-      "--keywords <text>",
-      "Generate the image prompt from these keywords using a Venice text model (overrides --prompt)."
-    )
-    .option(
-      "--keyword-rating <rating>",
-      "Content rating used to steer keyword-based prompt generation (G, PG, PG13, R).",
-      "R"
-    )
-    .option(
-      "--keyword-model <id>",
-      "Venice text model used for keyword-based prompt generation.",
-      "zai-org-glm-4.6"
-    )
-    .option(
-      "--debug",
-      "Enable debug mode to display additional logs"
-    )
+    .description("Generate images with the Venice.ai image API.")
+    .option("--prompt <text>", "Text prompt for image generation.")
+    .option("--file <path>", "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)")
+    .option("--negative-prompt <text>", "Negative prompt to guide what not to generate.")
+    .option("--model <modelKey>", "AI model to use.", defaultModel)
+    .option("--format <formatKey>", "Named image size (square, portrait, landscape, wide, tall).")
+    .option("--width <number>", "Image width", parseFloat, DEFAULT_WIDTH)
+    .option("--height <number>", "Image height", parseFloat, DEFAULT_HEIGHT)
+    .option("--steps <number>", "Number of inference steps (default: the model's own default)", parseFloat)
+    .option("--cfg-scale <number>", "Classifier-free guidance scale", parseFloat, DEFAULT_CFG_SCALE)
+    .option("--seed <number>", "Random seed for reproducibility", parseFloat)
+    .option("--lora <key>", "Apply a LoRA (Venice style preset) to the generation")
+    .option("--random-lora", "Randomly select a LoRA (style preset) to apply")
+    .option("--lora-strength <number>", "LoRA strength (0-100)", parseFloat)
+    .option("--output-format <format>", "Image output format (jpeg, png, webp)", DEFAULT_FORMAT)
+    .option("--out", "Save images to the current directory instead of the default folder.")
+    .option("--local", "Skip uploading to the aiwdm media library; only save locally.")
+    .option("--aiwdm-rating <rating>", "Rating passed to aiwdm upload (G, PG, PG13, R).", "R")
+    .option("--aiwdm-tags <tags>", "Extra comma-separated tags passed to aiwdm upload (source tag `venice` is always added).")
+    .option("--no-metadata", "Skip recording generation metadata (uploaded to aiwdm by default; written as a local sidecar with --local).")
+    .option("--keywords <text>", "Generate (or rewrite) the image prompt from these keywords using a Venice text model.")
+    .option("--keyword-rating <rating>", "Content rating used to steer keyword-based prompt generation (G, PG, PG13, R).", "R")
+    .option("--keyword-model <id>", "Venice text model used for keyword-based prompt generation.", "zai-org-glm-4.6")
+    .option("--debug", "Enable debug mode to display additional logs")
     .helpOption("-h, --help", "Display this help message.")
     .on("--help", () => {
-      // Generate the list of available models
       const availableModels = Object.keys(modelEndpoints)
         .map((key) => {
           const info = modelInfo[modelEndpoints[key]];
@@ -164,13 +58,9 @@ export function setupCLI() {
         })
         .join("\n");
 
-      // Generate the list of available formats
       const availableFormats = Object.keys(image_size)
         .map((key) => `  - ${key.padEnd(10)}: ${image_size[key].width}x${image_size[key].height}`)
         .join("\n");
-
-      // Generate the list of available LoRAs (Venice style presets)
-      const availableLoras = stylePresets.join(", ");
 
       console.log(`
 Available Models:
@@ -180,27 +70,25 @@ Available Formats:
 ${availableFormats}
 
 Available LoRAs:
-${availableLoras}
+${stylePresets.join(", ")}
 
 Examples:
   venice --prompt "A futuristic cityscape at dusk" --model venice-sd35
-  venice --prompt "A serene landscape" --format wide --lora photographic
+  venice --prompt "A serene landscape" --format wide --lora Photographic
   venice --prompt "A cyberpunk scene" --steps 30 --cfg-scale 9 --seed 42
-  venice --prompt "Anime character" --model wai --output-format png
-  venice --prompt "Portrait" --model qwen-image --variants 4
+  venice --keywords "neon, rain, alley" --keyword-rating PG13
+  venice --file ./prompts/
   venice --prompt "Surprise me" --random-lora
 
 Notes:
   - The 'VENICE_API_TOKEN' environment variable must be set with your Venice AI API key.
-  - Images are saved to the './images/venice' directory by default.
-  - Use '--out' to save images in the current working directory instead.
+  - Images are saved to './images/venice' (or $VENICE_PATH); use '--out' to force the cwd default.
         `);
 
-      // Exit the process after displaying help
       process.exit(0);
     });
 
   program.parse(process.argv);
 
   return program.opts();
-} 
+}

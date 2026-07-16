@@ -309,7 +309,8 @@ test("wave-replay reconstructs venice command from sidecar", () => {
     assert.match(out, /--prompt 'a cat with "fancy" hat'/);
     assert.match(out, /--seed 12345/);
     assert.match(out, /--lora Anime/);
-    assert.match(out, /--hide-watermark$/);
+    // hide_watermark is a legacy sidecar field: the flag was removed (always on).
+    assert.doesNotMatch(out, /--hide-watermark/);
   } finally {
     removeDir(tmpDir);
   }
@@ -403,9 +404,9 @@ test("wavespeed --file <directory> processes every .txt inside", () => {
       }
     );
 
-    assert.match(result.stdout, /Found 2 prompt file\(s\)/);
-    assert.match(result.stdout, /# Processing: a\.txt/);
-    assert.match(result.stdout, /# Processing: b\.txt/);
+    assert.match(result.stdout, /2 prompt files/);
+    assert.match(result.stdout, /a\.txt \(1\/2\)/);
+    assert.match(result.stdout, /b\.txt \(2\/2\)/);
     assert.doesNotMatch(result.stdout, /skip\.md/);
   } finally {
     removeDir(promptDir);
@@ -430,19 +431,19 @@ test("wavespeed --file <directory> --count rotates files instead of repeating ea
       }
     );
 
-    assert.match(result.stdout, /Round 1 of 2/);
-    assert.match(result.stdout, /Round 2 of 2/);
+    assert.match(result.stdout, /round 1\/2/);
+    assert.match(result.stdout, /round 2\/2/);
     // Each file should be processed once per round (twice total).
-    const aHits = result.stdout.match(/# Processing: a\.txt/g) || [];
-    const bHits = result.stdout.match(/# Processing: b\.txt/g) || [];
+    const aHits = result.stdout.match(/a\.txt \(\d\/2\)/g) || [];
+    const bHits = result.stdout.match(/b\.txt \(\d\/2\)/g) || [];
     assert.equal(aHits.length, 2, "a.txt should be processed in each round");
     assert.equal(bHits.length, 2, "b.txt should be processed in each round");
-    // The per-generation banner from generateBatch should not appear, since
-    // each generateBatch call runs with count=1 in this path.
-    assert.doesNotMatch(result.stdout, /Generation 1 of/);
+    // The per-generation repeat banner from generateBatch should not appear,
+    // since each generateBatch call runs with count=1 in this path.
+    assert.doesNotMatch(result.stdout, /generation 1\//);
     // Round 1 should see a.txt before b.txt, and round 2 should run a.txt
     // again before any second b.txt — i.e. a, b, a, b (not a, a, b, b).
-    const order = [...result.stdout.matchAll(/# Processing: ([ab])\.txt/g)].map((m) => m[1]);
+    const order = [...result.stdout.matchAll(/([ab])\.txt \(\d\/2\)/g)].map((m) => m[1]);
     assert.deepEqual(order, ["a", "b", "a", "b"]);
   } finally {
     removeDir(promptDir);

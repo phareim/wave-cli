@@ -1,7 +1,7 @@
 import { DEFAULT_FORMAT } from "./config.js";
 
 /**
- * Build parameters for Wavespeed API request
+ * Build parameters for a Wavespeed API request
  * @param {string} category - The model category (e.g., 'text-to-image', 'image-to-image')
  * @param {Object} options - User-provided options from CLI
  * @param {Object} [modelMetadata] - Optional model metadata for endpoint-specific quirks
@@ -39,8 +39,6 @@ export function buildParameters(category, options, modelMetadata = {}) {
     if (options.promptExpansion) params.enable_prompt_expansion = true;
   }
 
-  if (options.enableBase64) params.enable_base64_output = true;
-  if (options.sync) params.enable_sync_mode = true;
   if (options.negativePrompt) params.negative_prompt = options.negativePrompt;
   if (options.seed !== undefined && options.seed !== null && !modelMetadata.noSeed) {
     params.seed = parseInt(options.seed, 10);
@@ -57,7 +55,6 @@ export function buildParameters(category, options, modelMetadata = {}) {
   } else if (modelMetadata.defaultQuality) {
     params.quality = modelMetadata.defaultQuality;
   }
-  if (options.numImages) params.num_images = parseInt(options.numImages, 10);
 
   return params;
 }

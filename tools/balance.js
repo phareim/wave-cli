@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import * as ui from "../lib/ui.js";
 
 const VENICE_URL = "https://api.venice.ai/api/v1/api_keys/rate_limits";
 const WAVESPEED_URL = "https://api.wavespeed.ai/api/v3/balance";
@@ -54,21 +55,15 @@ const fetchWavespeed = async () => {
 
 const formatUsd = (n) => (n === null || n === undefined ? "?" : `$${n.toFixed(2)}`);
 
-const printHuman = (venice, wavespeed) => {
-  console.log("Venice");
-  if (venice.ok) {
-    console.log(`  USD:  ${formatUsd(venice.usd)}`);
-    if (venice.diem !== null) console.log(`  DIEM: ${venice.diem.toFixed(4)}`);
-    if (venice.tier) console.log(`  Tier: ${venice.tier}`);
+const printAccount = (name, result) => {
+  ui.banner(name);
+  if (result.ok) {
+    const rows = [["balance", ui.c.bold(formatUsd(result.usd))]];
+    if (result.diem !== null && result.diem !== undefined) rows.push(["diem", result.diem.toFixed(4)]);
+    if (result.tier) rows.push(["tier", result.tier]);
+    ui.kv(rows);
   } else {
-    console.log(`  ${venice.skipped ? "skipped" : "error"}: ${venice.error}`);
-  }
-  console.log("");
-  console.log("Wavespeed");
-  if (wavespeed.ok) {
-    console.log(`  USD:  ${formatUsd(wavespeed.usd)}`);
-  } else {
-    console.log(`  ${wavespeed.skipped ? "skipped" : "error"}: ${wavespeed.error}`);
+    console.log(`  ${result.skipped ? ui.c.dim(`skipped · ${result.error}`) : ui.c.red(result.error)}\n`);
   }
 };
 
@@ -84,12 +79,9 @@ program
 const opts = program.opts();
 
 const run = async () => {
-  const wantVenice = !opts.wavespeedOnly;
-  const wantWavespeed = !opts.veniceOnly;
-
   const [venice, wavespeed] = await Promise.all([
-    wantVenice ? fetchVenice() : Promise.resolve(null),
-    wantWavespeed ? fetchWavespeed() : Promise.resolve(null),
+    opts.wavespeedOnly ? null : fetchVenice(),
+    opts.veniceOnly ? null : fetchWavespeed(),
   ]);
 
   if (opts.json) {
@@ -98,24 +90,8 @@ const run = async () => {
     if (wavespeed) out.wavespeed = wavespeed;
     console.log(JSON.stringify(out, null, 2));
   } else {
-    if (venice && wavespeed) printHuman(venice, wavespeed);
-    else if (venice) {
-      console.log("Venice");
-      if (venice.ok) {
-        console.log(`  USD:  ${formatUsd(venice.usd)}`);
-        if (venice.diem !== null) console.log(`  DIEM: ${venice.diem.toFixed(4)}`);
-        if (venice.tier) console.log(`  Tier: ${venice.tier}`);
-      } else {
-        console.log(`  ${venice.skipped ? "skipped" : "error"}: ${venice.error}`);
-      }
-    } else if (wavespeed) {
-      console.log("Wavespeed");
-      if (wavespeed.ok) {
-        console.log(`  USD:  ${formatUsd(wavespeed.usd)}`);
-      } else {
-        console.log(`  ${wavespeed.skipped ? "skipped" : "error"}: ${wavespeed.error}`);
-      }
-    }
+    if (venice) printAccount("venice", venice);
+    if (wavespeed) printAccount("wavespeed", wavespeed);
   }
 
   const checked = [venice, wavespeed].filter(Boolean);

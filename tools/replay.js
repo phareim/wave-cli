@@ -55,8 +55,8 @@ const buildVeniceArgs = (m) => {
   push(args, "--lora", m.style_preset);
   push(args, "--lora-strength", m.lora_strength);
   push(args, "--output-format", m.output_format);
-  push(args, "--variants", m.variants);
-  if (m.hide_watermark === true) args.push("--hide-watermark");
+  // Legacy sidecar fields (variants, hide_watermark) are ignored: the flags
+  // were removed — hide_watermark is always on, variants never worked.
   return args;
 };
 
@@ -102,7 +102,7 @@ const buildWavespeedArgs = (m) => {
   push(args, "--audio", m.audio);
   push(args, "--output-format", m.output_format);
   push(args, "--quality", m.quality);
-  push(args, "--num-images", m.num_images);
+  // Legacy num_images (Kling per-request batch) has no flag anymore; --count covers repeats.
   push(args, "--seed", m.seed);
   if (m.enable_prompt_expansion === true) args.push("--prompt-expansion");
   if (Array.isArray(m.input_images) && m.input_images.length) {

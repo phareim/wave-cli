@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`venice/` and `wavespeed/` each expose a CLI entry point plus helpers (`cli.js`, `utils.js`, `config.js`, `models.js`) for their respective providers. `venice/models.json` is the cached catalog refreshed by `venice-models`. Shared development helpers live under `tools/`, while generated media lands in `images/` (Wavespeed) or `images/venice/` (Venice). Keep large assets or credentials outside the repo.
+Shared plumbing (terminal UI, file I/O, aiwdm upload, prompt resolution, Venice video polling) lives in `lib/`. `venice/`, `wavespeed/`, and `xai/` each expose CLI entry points plus provider-specific helpers (`cli.js`, `config.js`, `models.js`). `venice/models.json` is the cached catalog refreshed by `venice-models`. Extra CLIs live under `tools/` (`wave-replay`, `wave-balance`), while generated media lands in `images/` (Wavespeed), `images/venice/`, `images/xai/`, or `videos/venice/`. Keep large assets or credentials outside the repo.
 
 ## Build, Test & Development Commands
 - `npm install`: install CLI dependencies; rerun after updating `package.json`.

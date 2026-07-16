@@ -1,18 +1,11 @@
 #!/usr/bin/env node
 
-import { promises as fs, existsSync } from "fs";
-import os from "os";
-import path from "path";
-import { spawn } from "child_process";
-
 import { setupCLI } from "./cli.js";
 import {
     DEFAULT_WIDTH,
     DEFAULT_HEIGHT,
     DEFAULT_STEPS,
     DEFAULT_CFG_SCALE,
-    DEFAULT_HIDE_WATERMARK,
-    DEFAULT_RETURN_BINARY,
     image_size,
     stylePresets
 } from "./config.js";
@@ -21,14 +14,14 @@ import {
     getModelConstraints,
     stylePresets as dynamicStylePresets
 } from "./models.js";
-import { saveImage, saveMetadata } from "./utils.js";
-import { generatePromptFromKeywords, VALID_RATINGS } from "./text.js";
+import * as ui from "../lib/ui.js";
+import { saveMedia } from "../lib/media.js";
+import { publishOutputs } from "../lib/aiwdm.js";
+import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
 
 const VENICE_API_URL = "https://api.venice.ai/api/v1/image/generate";
 const SMOKE_MODE = process.env.VENICE_SMOKE_TEST === "1";
-
-const slugifyModelTag = (s) =>
-    String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const DIR_SPEC = { envVar: "VENICE_PATH", defaultDir: "images/venice" };
 
 const mockResponse = () => {
     const buffer = Buffer.from("mock venice image");
@@ -55,65 +48,6 @@ const requestImage = async (body) => {
 };
 
 let DEBUG = false;
-let localOutputOverride = false;
-
-const resolveAiwdmDir = () => {
-    const candidates = [
-        process.env.AIWDM_CLI_DIR,
-        path.join(os.homedir(), "github/petter/aiwdm/cli"),
-        path.join(os.homedir(), "github/aiwdm/cli"),
-        "/home/petter/github/aiwdm/cli",
-    ].filter(Boolean);
-    return candidates.find((p) => existsSync(p));
-};
-
-const uploadToAiwdm = async (filePath, { prompt, rating, tags, metadata }) => {
-    const args = ["upload", filePath];
-    if (rating) args.push("--rating", rating);
-    if (tags && tags.length) args.push("--tags", tags.join(","));
-    if (prompt) args.push("--prompt", prompt);
-
-    // Metadata is forwarded as a temp JSON file: shell-escaping a multi-KB JSON
-    // blob is brittle, and aiwdm reads the file as the system of record now that
-    // wave-cli no longer writes a local sidecar.
-    let metadataDir;
-    if (metadata) {
-        metadataDir = await fs.mkdtemp(path.join(os.tmpdir(), "wave-meta-"));
-        const metadataPath = path.join(metadataDir, "metadata.json");
-        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
-        args.push("--metadata-file", metadataPath);
-    }
-
-    try {
-        await new Promise((resolve) => {
-            // cwd anchors the env lookup: aiwdm loads .env from cwd first.
-            const cwd = resolveAiwdmDir();
-            const proc = spawn("aiwdm", args, { stdio: "inherit", ...(cwd ? { cwd } : {}) });
-            proc.on("error", (err) => {
-                console.error(`aiwdm upload failed: ${err.message}`);
-                resolve();
-            });
-            proc.on("close", (code) => {
-                if (code !== 0) console.error(`aiwdm exited with code ${code}`);
-                resolve();
-            });
-        });
-    } finally {
-        if (metadataDir) {
-            try { await fs.rm(metadataDir, { recursive: true, force: true }); } catch {}
-        }
-    }
-};
-
-const readPromptFromFile = async (filePath) => {
-    try {
-        const prompt = await fs.readFile(filePath, "utf8");
-        return prompt.trim();
-    } catch (error) {
-        if (DEBUG) console.error(`Failed to read prompt from ${filePath}:`, error);
-        return null;
-    }
-};
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
@@ -126,9 +60,10 @@ const buildInput = (options) => {
     _width = Math.floor(_width / divisor) * divisor;
     _height = Math.floor(_height / divisor) * divisor;
 
-    const requestedSteps = parseInt(options.steps) || DEFAULT_STEPS;
+    // No --steps → the model's own default; explicit values are capped at the model max.
+    const requestedSteps = parseInt(options.steps) || constraints.defaultSteps || DEFAULT_STEPS;
     if (options.steps && requestedSteps > constraints.maxSteps) {
-        console.warn(`\nWarning: Steps value was capped at ${constraints.maxSteps} (maximum for this model)`);
+        ui.warn(`Steps capped at ${constraints.maxSteps} (maximum for this model)`);
     }
 
     const input = {
@@ -138,8 +73,8 @@ const buildInput = (options) => {
         height: _height,
         steps: Math.min(requestedSteps, constraints.maxSteps),
         cfg_scale: parseFloat(options.cfgScale) || DEFAULT_CFG_SCALE,
-        hide_watermark: options.hideWatermark || DEFAULT_HIDE_WATERMARK,
-        return_binary: options.returnBinary || DEFAULT_RETURN_BINARY,
+        hide_watermark: true,
+        return_binary: true,
         safe_mode: false,
         seed: options.seed !== undefined ? parseInt(options.seed) : randomSeed(),
     };
@@ -148,18 +83,6 @@ const buildInput = (options) => {
     if (options.outputFormat) input.format = options.outputFormat;
     if (options.loraStrength !== undefined) {
         input.lora_strength = Math.min(Math.max(parseInt(options.loraStrength), 0), 100);
-    }
-    if (options.embedExifMetadata) input.embed_exif_metadata = true;
-
-    if (options.variants !== undefined) {
-        const variants = Math.min(Math.max(parseInt(options.variants), 1), 4);
-        if (variants > 1 || !input.return_binary) {
-            if (variants > 1 && input.return_binary) {
-                console.warn("\nWarning: Variants only work when return_binary is false. Setting return_binary to false.");
-                input.return_binary = false;
-            }
-            input.variants = variants;
-        }
     }
 
     if (options.format) {
@@ -175,102 +98,58 @@ const buildInput = (options) => {
 
 const run = async (options) => {
     if (!process.env.VENICE_API_TOKEN) {
-        console.error("Error: VENICE_API_TOKEN environment variable is not set.");
+        ui.err("VENICE_API_TOKEN environment variable is not set.");
         process.exit(1);
     }
 
-    if (!options.prompt) {
-        const promptFilePath = options.file || "./prompt.txt";
-        const promptFromFile = await readPromptFromFile(promptFilePath);
-        if (promptFromFile) {
-            options.prompt = promptFromFile;
-            console.log(`Using prompt from ${promptFilePath}.`);
-        }
-    }
-
-    let originalPrompt;
-    if (options.keywords) {
-        const rating = VALID_RATINGS.includes(options.keywordRating) ? options.keywordRating : "R";
-        if (rating !== options.keywordRating) {
-            console.warn(`Invalid --keyword-rating '${options.keywordRating}'. Using '${rating}'. Valid: ${VALID_RATINGS.join(", ")}`);
-            options.keywordRating = rating;
-        }
-        const existingPrompt = options.prompt && options.prompt.trim() ? options.prompt.trim() : null;
-        const header = existingPrompt ? "__Rewriting prompt with keywords" : "__Generating prompt from keywords";
-        console.log(header + "__");
-        console.log(`Keywords: ${options.keywords}`);
-        console.log(`Rating: ${rating}`);
-        console.log(`Text model: ${options.keywordModel}`);
-        console.log("‾‾");
-        try {
-            const generated = await generatePromptFromKeywords({
-                keywords: options.keywords,
-                rating,
-                model: options.keywordModel,
-                existingPrompt: existingPrompt || undefined,
-                debug: DEBUG,
-            });
-            console.log(`Prompt: ${generated}\n`);
-            if (existingPrompt) originalPrompt = existingPrompt;
-            options.prompt = generated;
-        } catch (error) {
-            console.error(`Failed to generate prompt from keywords: ${error.message}`);
-            process.exit(1);
-        }
-    }
-
-    if (!options.prompt) {
-        console.error("Error: No prompt provided. Please use --prompt, --file, --keywords, or create a ./prompt.txt file.");
+    const { prompt, originalPrompt } = await resolvePrompt(options, { debug: DEBUG });
+    if (!prompt) {
+        ui.err("No prompt provided. Use --prompt, --file, --keywords, or create a ./prompt.txt file.");
         process.exit(1);
     }
+    options.prompt = prompt;
 
     const seedProvidedByUser = options.seed !== undefined;
     const input = buildInput(options);
 
     if (DEBUG) console.log("Input parameters:", JSON.stringify(input, null, 2));
 
+    ui.banner("venice", "image");
+    ui.kv([
+        ["prompt", ui.truncate(input.prompt)],
+        ["model", input.model],
+        ["size", `${input.width}×${input.height}`],
+        ["steps", `${input.steps} · cfg ${input.cfg_scale}`],
+        ["lora", input.style_preset],
+        ["seed", `${input.seed}${seedProvidedByUser ? "" : ui.c.dim(" · auto")}`],
+    ]);
+
+    const spin = ui.spinner("generating");
     try {
-        console.log("__Generating image__");
-        console.log(`Model: ${input.model}`);
-        console.log(`Dimensions: ${input.width}x${input.height}`);
-        console.log(`Steps: ${input.steps} | CFG Scale: ${input.cfg_scale}`);
-        console.log(`Seed: ${input.seed}${seedProvidedByUser ? "" : " (auto)"}`);
-        console.log("‾‾\n");
-
-        const startTime = Date.now();
-        const progressInterval = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            process.stdout.write(`\r🎨 Generating... ${elapsed}s      `);
-        }, 1000);
-        process.stdout.write("\r");
-
         const response = await requestImage(input);
-
-        clearInterval(progressInterval);
-        process.stdout.write("\r✨ Generation complete!                                    \n");
 
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
             const result = await response.json();
-            console.error(`API Error: ${response.status} - ${JSON.stringify(result, null, 2)}`);
+            spin.fail(`API Error: ${response.status} - ${JSON.stringify(result, null, 2)}`);
+            process.exitCode = 1;
             return;
         }
         if (!response.ok) {
-            console.error(`API Error: ${response.status}`);
+            spin.fail(`API Error: ${response.status}`);
+            process.exitCode = 1;
             return;
         }
 
         const buffer = Buffer.from(await response.arrayBuffer());
-        const fileName = `venice_${Date.now()}.png`;
-        const generationTimeMs = Date.now() - startTime;
-        const generationTime = (generationTimeMs / 1000).toFixed(2);
+        const generationTimeMs = spin.elapsed();
+        spin.succeed(`generated in ${ui.fmtDuration(generationTimeMs)}`);
 
-        const savedPath = await saveImage(buffer, fileName, localOutputOverride);
+        const savedPath = await saveMedia(buffer, `venice_${Date.now()}.png`, DIR_SPEC, options.out);
 
         // Metadata is the system of record for replay/debugging. By default it
-        // travels to aiwdm as a JSON blob alongside the upload. When the upload
-        // is skipped (--local or smoke mode), we fall back to a local sidecar so
-        // the data isn't lost.
+        // travels to aiwdm as a JSON blob alongside the upload; publishOutputs
+        // falls back to a local sidecar when the upload is skipped.
         const metadataBlob = options.metadata !== false && savedPath ? {
             source: "venice",
             kind: "image",
@@ -293,82 +172,39 @@ const run = async (options) => {
             lora_strength: input.lora_strength,
             output_format: input.format,
             hide_watermark: input.hide_watermark,
-            variants: input.variants,
             generation_time_ms: generationTimeMs,
         } : null;
 
-        const willUpload = !options.local && !SMOKE_MODE && savedPath;
-        if (metadataBlob && !willUpload) {
-            await saveMetadata(savedPath, metadataBlob);
-        }
+        await publishOutputs(savedPath ? [savedPath] : [], metadataBlob, {
+            sourceTag: "venice",
+            modelTag: options.model,
+            prompt: options.prompt,
+            options,
+            smoke: SMOKE_MODE,
+        });
 
-        if (willUpload) {
-            const extraTags = options.aiwdmTags
-                ? options.aiwdmTags.split(",").map((t) => t.trim()).filter(Boolean)
-                : [];
-            const modelTag = slugifyModelTag(options.model);
-            const tags = [...new Set(["venice", modelTag, ...extraTags].filter(Boolean))];
-            await uploadToAiwdm(savedPath, {
-                prompt: options.prompt,
-                rating: options.aiwdmRating,
-                tags,
-                metadata: metadataBlob,
-            });
-        }
-
-        console.log("\n__ Generation Summary __");
-        console.log(`Seed: ${input.seed}${seedProvidedByUser ? "" : " (auto)"}`);
-        console.log(`Total time: ${generationTime}s`);
-        console.log(`Dimensions: ${input.width}x${input.height}`);
-        console.log("‾‾\n");
+        ui.footer([
+            `seed ${input.seed}`,
+            `${input.width}×${input.height}`,
+            ui.fmtDuration(generationTimeMs),
+        ]);
     } catch (error) {
-        console.error("Error during image generation:", error);
+        spin.fail(`Error during image generation: ${error.message || error}`);
+        process.exitCode = 1;
     }
 };
 
 const main = async () => {
     const options = setupCLI();
     DEBUG = options.debug || false;
-    localOutputOverride = options.out || false;
 
     if (options.randomLora) {
         const presets = dynamicStylePresets.length > 0 ? dynamicStylePresets : stylePresets;
         options.lora = presets[Math.floor(Math.random() * presets.length)];
-        console.log(`\n🎲 Randomly selected LoRA (style preset): ${options.lora}\n`);
+        console.log(`${ui.c.cyan("🎲")} random LoRA: ${ui.c.bold(options.lora)}`);
     }
 
-    // --file accepts a directory: iterate over each .txt file inside.
-    if (options.file && !options.prompt) {
-        const filePath = path.resolve(process.cwd(), options.file);
-        let stat;
-        try {
-            stat = await fs.stat(filePath);
-        } catch {
-            // Missing path; let run() surface the read error.
-        }
-        if (stat?.isDirectory()) {
-            let txtFiles;
-            try {
-                const entries = await fs.readdir(filePath);
-                txtFiles = entries.filter((f) => f.endsWith(".txt")).sort();
-            } catch (error) {
-                console.error(`Failed to read directory ${filePath}:`, error);
-                process.exit(1);
-            }
-            if (txtFiles.length === 0) {
-                console.error(`No .txt files found in ${filePath}.`);
-                process.exit(1);
-            }
-            console.log(`Found ${txtFiles.length} prompt file(s) in ${filePath}: ${txtFiles.join(", ")}\n`);
-            for (const txtFile of txtFiles) {
-                const promptFilePath = path.join(filePath, txtFile);
-                console.log(`\n##\n# Processing: ${txtFile}\n##\n`);
-                await run({ ...options, file: promptFilePath, prompt: undefined });
-            }
-            return;
-        }
-    }
-
+    if (await runPromptBatch(options, run)) return;
     await run(options);
 };
 

@@ -1,162 +1,14 @@
 #!/usr/bin/env node
 
-import { promises as fs } from "fs";
-import { existsSync } from "fs";
-import os from "os";
-import path from "path";
-import { spawn } from "child_process";
-
 import { setupVideoCLI, resolveVideoModel } from "./video-cli.js";
-import { saveMetadata } from "./utils.js";
+import * as ui from "../lib/ui.js";
+import { publishOutputs } from "../lib/aiwdm.js";
+import { readPromptFromFile, runPromptBatch } from "../lib/prompts.js";
+import { queueJob, pollUntilReady, saveVideo } from "../lib/venice-video.js";
 
-const VENICE_API_BASE = "https://api.venice.ai/api/v1";
 const SMOKE_MODE = process.env.VENICE_SMOKE_TEST === "1";
 
-const slugifyModelTag = (s) =>
-  String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-
 let DEBUG = false;
-let localOutputOverride = false;
-
-const getVideoPath = () => {
-  const defaultPath = path.resolve(process.cwd(), "videos/venice/");
-  const envPath = process.env.VENICE_VIDEO_PATH
-    ? path.resolve(process.env.VENICE_VIDEO_PATH)
-    : defaultPath;
-  return localOutputOverride ? defaultPath : envPath;
-};
-
-const saveVideo = async (buffer, fileName) => {
-  const outDir = getVideoPath();
-  const filePath = path.join(outDir, fileName);
-  await fs.mkdir(outDir, { recursive: true });
-  await fs.writeFile(filePath, buffer);
-  console.log(`Video saved: ${filePath}`);
-  return filePath;
-};
-
-const resolveAiwdmDir = () => {
-  const candidates = [
-    process.env.AIWDM_CLI_DIR,
-    path.join(os.homedir(), "github/petter/aiwdm/cli"),
-    path.join(os.homedir(), "github/aiwdm/cli"),
-    "/home/petter/github/aiwdm/cli",
-  ].filter(Boolean);
-  return candidates.find((p) => existsSync(p));
-};
-
-const uploadToAiwdm = async (filePath, { prompt, rating, tags, metadata }) => {
-  const args = ["upload", filePath];
-  if (rating) args.push("--rating", rating);
-  if (tags && tags.length) args.push("--tags", tags.join(","));
-  if (prompt) args.push("--prompt", prompt);
-
-  let metadataDir;
-  if (metadata) {
-    metadataDir = await fs.mkdtemp(path.join(os.tmpdir(), "wave-meta-"));
-    const metadataPath = path.join(metadataDir, "metadata.json");
-    await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
-    args.push("--metadata-file", metadataPath);
-  }
-
-  try {
-    await new Promise((resolve) => {
-      // cwd anchors the env lookup: aiwdm loads .env from cwd first.
-      const cwd = resolveAiwdmDir();
-      const proc = spawn("aiwdm", args, { stdio: "inherit", ...(cwd ? { cwd } : {}) });
-      proc.on("error", (err) => {
-        console.error(`aiwdm upload failed: ${err.message}`);
-        resolve();
-      });
-      proc.on("close", (code) => {
-        if (code !== 0) console.error(`aiwdm exited with code ${code}`);
-        resolve();
-      });
-    });
-  } finally {
-    if (metadataDir) {
-      try { await fs.rm(metadataDir, { recursive: true, force: true }); } catch {}
-    }
-  }
-};
-
-const readPromptFromFile = async (filePath) => {
-  try {
-    return (await fs.readFile(filePath, "utf8")).trim();
-  } catch {
-    return null;
-  }
-};
-
-const authHeaders = (extra = {}) => ({
-  Authorization: `Bearer ${process.env.VENICE_API_TOKEN}`,
-  ...extra,
-});
-
-const queueJob = async (body) => {
-  if (SMOKE_MODE) return { queue_id: "smoke-queue-id", model: body.model };
-
-  const res = await fetch(`${VENICE_API_BASE}/video/queue`, {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(body),
-  });
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Queue failed (${res.status}): ${text}`);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`Queue returned non-JSON: ${text}`);
-  }
-};
-
-const retrieveJob = async (model, queueId) => {
-  if (SMOKE_MODE) {
-    return { done: true, buffer: Buffer.from("mock venice video mp4") };
-  }
-
-  const res = await fetch(`${VENICE_API_BASE}/video/retrieve`, {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ model, queue_id: queueId }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Retrieve failed (${res.status}): ${errText}`);
-  }
-
-  const contentType = res.headers.get("content-type") || "";
-
-  if (contentType.startsWith("video/")) {
-    const buffer = Buffer.from(await res.arrayBuffer());
-    return { done: true, buffer };
-  }
-
-  const payload = await res.json();
-  if (DEBUG) console.log("Retrieve status:", JSON.stringify(payload));
-  return { done: false, status: payload };
-};
-
-const pollUntilReady = async (model, queueId, { interval = 5000, maxAttempts = 360 } = {}) => {
-  const start = Date.now();
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const result = await retrieveJob(model, queueId);
-    if (result.done) return result.buffer;
-
-    const elapsed = Math.round((Date.now() - start) / 1000);
-    const avg = result.status?.average_execution_time;
-    const etaSuffix = avg ? ` (est. ${Math.round(avg / 1000)}s)` : "";
-    process.stdout.write(`\r🎬 Generating... ${elapsed}s${etaSuffix}          `);
-
-    await new Promise((r) => setTimeout(r, interval));
-  }
-  throw new Error("Polling timeout: video generation took too long");
-};
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
@@ -183,7 +35,7 @@ const buildQueueBody = (options, modelEntry) => {
 
 const run = async (options) => {
   if (!process.env.VENICE_API_TOKEN && !SMOKE_MODE) {
-    console.error("Error: VENICE_API_TOKEN environment variable is not set.");
+    ui.err("VENICE_API_TOKEN environment variable is not set.");
     process.exit(1);
   }
 
@@ -192,25 +44,25 @@ const run = async (options) => {
     const fromFile = await readPromptFromFile(promptFilePath);
     if (fromFile) {
       options.prompt = fromFile;
-      console.log(`Using prompt from ${promptFilePath}.`);
+      ui.info(`prompt from ${promptFilePath}`);
     } else {
-      console.error("Error: No prompt provided. Use --prompt, --file, or create ./prompt.txt.");
+      ui.err("No prompt provided. Use --prompt, --file, or create ./prompt.txt.");
       process.exit(1);
     }
   }
 
   const modelEntry = resolveVideoModel(options.model);
   if (!modelEntry) {
-    console.error(`Error: Unknown video model '${options.model}'. Try --help for aliases.`);
+    ui.err(`Unknown video model '${options.model}'. Try --help for aliases.`);
     process.exit(1);
   }
 
   if (modelEntry.type === "image-to-video" && !options.imageUrl && !options.referenceImages?.length) {
-    console.error(`Error: ${modelEntry.name} requires --image-url or --reference-images.`);
+    ui.err(`${modelEntry.name} requires --image-url or --reference-images.`);
     process.exit(1);
   }
   if (modelEntry.type === "video" && !options.videoUrl) {
-    console.error(`Error: ${modelEntry.name} requires --video-url.`);
+    ui.err(`${modelEntry.name} requires --video-url.`);
     process.exit(1);
   }
 
@@ -220,18 +72,21 @@ const run = async (options) => {
   const body = buildQueueBody(options, modelEntry);
   if (DEBUG) console.log("Queue body:", JSON.stringify(body, null, 2));
 
-  console.log("__Generating video__");
-  console.log(`Model: ${modelEntry.name} [${modelEntry.id}]`);
-  console.log(`Duration: ${options.duration} | Resolution: ${options.resolution}`);
-  if (modelEntry.type === "text-to-video") console.log(`Aspect: ${options.aspectRatio}`);
-  console.log(`Seed: ${options.seed}${seedProvidedByUser ? "" : " (auto)"}`);
-  console.log("‾‾\n");
+  ui.banner("venice-video", modelEntry.type);
+  ui.kv([
+    ["prompt", ui.truncate(options.prompt)],
+    ["model", `${modelEntry.name} ${ui.c.dim(`[${modelEntry.id}]`)}`],
+    ["clip", `${options.duration} · ${options.resolution}`],
+    ["aspect", modelEntry.type === "text-to-video" ? options.aspectRatio : undefined],
+    ["seed", `${options.seed}${seedProvidedByUser ? "" : ui.c.dim(" · auto")}`],
+  ]);
 
   let queued;
   try {
     queued = await queueJob(body);
   } catch (err) {
-    console.error(err.message);
+    ui.err(err.message);
+    process.exitCode = 1;
     return;
   }
   const queueId = queued.queue_id;
@@ -239,20 +94,15 @@ const run = async (options) => {
 
   let buffer;
   try {
-    buffer = await pollUntilReady(modelEntry.id, queueId);
+    buffer = await pollUntilReady(modelEntry.id, queueId, { debug: DEBUG });
   } catch (err) {
-    process.stdout.write("\r");
-    console.error(err.message);
+    ui.err(err.message);
+    process.exitCode = 1;
     return;
   }
 
-  process.stdout.write("\r✨ Generation complete!                                    \n");
+  const savedPath = await saveVideo(buffer, `venice_${queueId}.mp4`, options.out);
 
-  const fileName = `venice_${queueId}.mp4`;
-  const savedPath = await saveVideo(buffer, fileName);
-
-  // Metadata is stored remotely on the aiwdm record by default; the local
-  // sidecar is only written when the upload is skipped (--local or smoke mode).
   const metadataBlob = options.metadata !== false && savedPath ? {
     source: "venice-video",
     kind: "video",
@@ -274,71 +124,26 @@ const run = async (options) => {
     queue_id: queueId,
   } : null;
 
-  const willUpload = !options.local && !SMOKE_MODE && savedPath;
-  if (metadataBlob && !willUpload) {
-    await saveMetadata(savedPath, metadataBlob);
-  }
+  await publishOutputs(savedPath ? [savedPath] : [], metadataBlob, {
+    sourceTag: "venice-video",
+    modelTag: modelEntry.id,
+    prompt: options.prompt,
+    options,
+    smoke: SMOKE_MODE,
+  });
 
-  if (willUpload) {
-    const extraTags = options.aiwdmTags
-      ? options.aiwdmTags.split(",").map((t) => t.trim()).filter(Boolean)
-      : [];
-    const modelTag = slugifyModelTag(modelEntry.id);
-    const tags = [...new Set(["venice-video", modelTag, ...extraTags].filter(Boolean))];
-    await uploadToAiwdm(savedPath, {
-      prompt: options.prompt,
-      rating: options.aiwdmRating,
-      tags,
-      metadata: metadataBlob,
-    });
-  }
-
-  console.log("\n__ Generation Summary __");
-  console.log(`Model: ${modelEntry.name}`);
-  console.log(`Queue ID: ${queueId}`);
-  console.log(`Duration: ${options.duration}`);
-  console.log(`Resolution: ${options.resolution}`);
-  console.log(`Seed: ${options.seed}${seedProvidedByUser ? "" : " (auto)"}`);
-  console.log("‾‾\n");
+  ui.footer([
+    `queue ${queueId}`,
+    `${options.duration} · ${options.resolution}`,
+    `seed ${options.seed}`,
+  ]);
 };
 
 const main = async () => {
   const options = setupVideoCLI();
   DEBUG = options.debug || false;
-  localOutputOverride = options.out || false;
 
-  // --file accepts a directory: iterate over each .txt file inside.
-  if (options.file && !options.prompt) {
-    const filePath = path.resolve(process.cwd(), options.file);
-    let stat;
-    try {
-      stat = await fs.stat(filePath);
-    } catch {
-      // Missing path; let run() surface the read error.
-    }
-    if (stat?.isDirectory()) {
-      let txtFiles;
-      try {
-        const entries = await fs.readdir(filePath);
-        txtFiles = entries.filter((f) => f.endsWith(".txt")).sort();
-      } catch (error) {
-        console.error(`Failed to read directory ${filePath}:`, error);
-        process.exit(1);
-      }
-      if (txtFiles.length === 0) {
-        console.error(`No .txt files found in ${filePath}.`);
-        process.exit(1);
-      }
-      console.log(`Found ${txtFiles.length} prompt file(s) in ${filePath}: ${txtFiles.join(", ")}\n`);
-      for (const txtFile of txtFiles) {
-        const promptFilePath = path.join(filePath, txtFile);
-        console.log(`\n##\n# Processing: ${txtFile}\n##\n`);
-        await run({ ...options, file: promptFilePath, prompt: undefined });
-      }
-      return;
-    }
-  }
-
+  if (await runPromptBatch(options, run)) return;
   await run(options);
 };
 

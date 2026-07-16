@@ -1,18 +1,14 @@
 #!/usr/bin/env node
 
-import { promises as fs, existsSync } from "fs";
-import os from "os";
-import path from "path";
-import { spawn } from "child_process";
-
 import { setupCLI } from "./cli.js";
 import { XAI_API_URL } from "./config.js";
-import { saveImage, saveMetadata } from "./utils.js";
+import * as ui from "../lib/ui.js";
+import { saveMedia } from "../lib/media.js";
+import { publishOutputs } from "../lib/aiwdm.js";
+import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
 
 const SMOKE_MODE = process.env.XAI_SMOKE_TEST === "1";
-
-const slugifyModelTag = (s) =>
-    String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const DIR_SPEC = { envVar: "XAI_PATH", defaultDir: "images/xai" };
 
 const MIME_TO_EXT = {
     "image/jpeg": "jpg",
@@ -59,115 +55,44 @@ const requestImage = async (body) => {
 };
 
 let DEBUG = false;
-let localOutputOverride = false;
 
-const resolveAiwdmDir = () => {
-    const candidates = [
-        process.env.AIWDM_CLI_DIR,
-        path.join(os.homedir(), "github/petter/aiwdm/cli"),
-        path.join(os.homedir(), "github/aiwdm/cli"),
-        "/home/petter/github/aiwdm/cli"
-    ].filter(Boolean);
-    return candidates.find((p) => existsSync(p));
-};
-
-const uploadToAiwdm = async (filePath, { prompt, rating, tags, metadata }) => {
-    const args = ["upload", filePath];
-    if (rating) args.push("--rating", rating);
-    if (tags && tags.length) args.push("--tags", tags.join(","));
-    if (prompt) args.push("--prompt", prompt);
-
-    let metadataDir;
-    if (metadata) {
-        metadataDir = await fs.mkdtemp(path.join(os.tmpdir(), "xai-meta-"));
-        const metadataPath = path.join(metadataDir, "metadata.json");
-        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
-        args.push("--metadata-file", metadataPath);
+const run = async (options) => {
+    if (!process.env.XAI_API_KEY) {
+        ui.err("XAI_API_KEY environment variable is not set.");
+        process.exit(1);
     }
 
-    try {
-        await new Promise((resolve) => {
-            const cwd = resolveAiwdmDir();
-            const proc = spawn("aiwdm", args, { stdio: "inherit", ...(cwd ? { cwd } : {}) });
-            proc.on("error", (err) => {
-                console.error(`aiwdm upload failed: ${err.message}`);
-                resolve();
-            });
-            proc.on("close", (code) => {
-                if (code !== 0) console.error(`aiwdm exited with code ${code}`);
-                resolve();
-            });
-        });
-    } finally {
-        if (metadataDir) {
-            try { await fs.rm(metadataDir, { recursive: true, force: true }); } catch {}
-        }
+    const { prompt } = await resolvePrompt(options, { debug: DEBUG });
+    if (!prompt) {
+        ui.err("No prompt provided. Use --prompt, --file, or create a ./prompt.txt file.");
+        process.exit(1);
     }
-};
+    options.prompt = prompt;
 
-const readPromptFromFile = async (filePath) => {
-    try {
-        const prompt = await fs.readFile(filePath, "utf8");
-        return prompt.trim();
-    } catch (error) {
-        if (DEBUG) console.error(`Failed to read prompt from ${filePath}:`, error);
-        return null;
-    }
-};
-
-const buildInput = (options) => {
     const n = Math.max(1, parseInt(options.n, 10) || 1);
-    return {
+    const input = {
         model: options.model,
-        prompt: options.prompt,
+        prompt,
         n,
         aspect_ratio: options.aspectRatio,
         resolution: options.resolution,
         response_format: "b64_json"
     };
-};
-
-const run = async (options) => {
-    if (!process.env.XAI_API_KEY) {
-        console.error("Error: XAI_API_KEY environment variable is not set.");
-        process.exit(1);
-    }
-
-    if (!options.prompt) {
-        const promptFilePath = options.file || "./prompt.txt";
-        const promptFromFile = await readPromptFromFile(promptFilePath);
-        if (promptFromFile) {
-            options.prompt = promptFromFile;
-            console.log(`Using prompt from ${promptFilePath}.`);
-        }
-    }
-
-    if (!options.prompt) {
-        console.error("Error: No prompt provided. Use --prompt, --file, or create a ./prompt.txt file.");
-        process.exit(1);
-    }
-
-    const input = buildInput(options);
 
     if (DEBUG) console.log("Input parameters:", JSON.stringify(input, null, 2));
 
+    ui.banner("imagine", "x.ai image");
+    ui.kv([
+        ["prompt", ui.truncate(prompt)],
+        ["model", input.model],
+        ["count", n > 1 ? n : undefined],
+        ["aspect", input.aspect_ratio],
+        ["resolution", input.resolution],
+    ]);
+
+    const spin = ui.spinner(n > 1 ? `generating ${n} images` : "generating");
     try {
-        console.log("__Generating image__");
-        console.log(`Model: ${input.model}`);
-        console.log(`Count: ${input.n} | Aspect ratio: ${input.aspect_ratio} | Resolution: ${input.resolution}`);
-        console.log("‾‾\n");
-
-        const startTime = Date.now();
-        const progressInterval = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            process.stdout.write(`\r🎨 Generating ${input.n} image${input.n > 1 ? "s" : ""}... ${elapsed}s      `);
-        }, 1000);
-        process.stdout.write("\r");
-
         const response = await requestImage(input);
-
-        clearInterval(progressInterval);
-        process.stdout.write("\r✨ Generation complete!                                    \n");
 
         const contentType = response.headers.get("content-type");
         if (!response.ok) {
@@ -179,29 +104,32 @@ const run = async (options) => {
             } catch {
                 body = "<unreadable body>";
             }
-            console.error(`API Error: ${response.status} - ${body}`);
+            spin.fail(`API Error: ${response.status} - ${body}`);
+            process.exitCode = 1;
             return;
         }
 
         const result = await response.json();
         if (!result?.data?.length) {
-            console.error(`API Error: response had no data array. Full body: ${JSON.stringify(result)}`);
+            spin.fail(`API Error: response had no data array. Full body: ${JSON.stringify(result)}`);
+            process.exitCode = 1;
             return;
         }
 
-        const generationTimeMs = Date.now() - startTime;
+        const generationTimeMs = spin.elapsed();
         const ticks = result.usage?.cost_in_usd_ticks;
         // x.ai usage ticks: 100M ticks = $0.01, i.e. 1 tick = $1e-10
         const costUsd = typeof ticks === "number" ? ticks / 1e10 : undefined;
-        const timestamp = Date.now();
+        spin.succeed(`generated ${result.data.length} image${result.data.length > 1 ? "s" : ""} in ${ui.fmtDuration(generationTimeMs)}`);
 
-        const requestedN = input.n;
+        const timestamp = Date.now();
+        const requestedN = n;
 
         for (let i = 0; i < result.data.length; i++) {
             const entry = result.data[i];
             const b64 = stripDataUri(entry.b64_json);
             if (!b64) {
-                console.error(`API Error: data[${i}] missing b64_json. Entry: ${JSON.stringify(entry)}`);
+                ui.err(`API Error: data[${i}] missing b64_json. Entry: ${JSON.stringify(entry)}`);
                 continue;
             }
             const ext = extFromMime(entry.mime_type);
@@ -210,8 +138,11 @@ const run = async (options) => {
                 : `xai_${timestamp}.${ext}`;
 
             const buffer = Buffer.from(b64, "base64");
-            const savedPath = await saveImage(buffer, fileName, localOutputOverride);
+            const savedPath = await saveMedia(buffer, fileName, DIR_SPEC, options.out);
 
+            // Each per-image sidecar records n: 1 (it represents one image) plus
+            // image_index / requested_n (audit-only) so wave-replay reproduces a
+            // single-image invocation, not the original N-image batch.
             const metadataBlob = options.metadata !== false && savedPath ? {
                 source: "xai",
                 kind: "image",
@@ -219,7 +150,7 @@ const run = async (options) => {
                 cli_version: "1.0.0",
                 model: input.model,
                 model_key: options.model,
-                prompt: input.prompt,
+                prompt,
                 revised_prompt: entry.revised_prompt,
                 aspect_ratio: input.aspect_ratio,
                 resolution: input.resolution,
@@ -231,76 +162,31 @@ const run = async (options) => {
                 generation_time_ms: generationTimeMs
             } : null;
 
-            const willUpload = !options.local && !SMOKE_MODE && savedPath;
-            if (metadataBlob && !willUpload) {
-                await saveMetadata(savedPath, metadataBlob);
-            }
-
-            if (willUpload) {
-                const extraTags = options.aiwdmTags
-                    ? options.aiwdmTags.split(",").map((t) => t.trim()).filter(Boolean)
-                    : [];
-                const modelTag = slugifyModelTag(options.model);
-                const tags = [...new Set(["xai", modelTag, ...extraTags].filter(Boolean))];
-                await uploadToAiwdm(savedPath, {
-                    prompt: options.prompt,
-                    rating: options.aiwdmRating,
-                    tags,
-                    metadata: metadataBlob
-                });
-            }
-
-            const costStr = typeof costUsd === "number" ? ` | Cost: $${costUsd.toFixed(4)}` : "";
-            console.log(`Image ${i + 1}/${result.data.length}${costStr} | ${(generationTimeMs / 1000).toFixed(2)}s`);
+            await publishOutputs(savedPath ? [savedPath] : [], metadataBlob, {
+                sourceTag: "xai",
+                modelTag: options.model,
+                prompt,
+                options,
+                smoke: SMOKE_MODE,
+            });
         }
 
-        console.log("\n__ Generation Summary __");
-        console.log(`Model: ${input.model}`);
-        console.log(`Images: ${result.data.length}`);
-        if (typeof costUsd === "number") console.log(`Total cost: $${costUsd.toFixed(4)}`);
-        console.log(`Total time: ${(generationTimeMs / 1000).toFixed(2)}s`);
-        console.log("‾‾\n");
+        ui.footer([
+            `${result.data.length} image${result.data.length > 1 ? "s" : ""}`,
+            typeof costUsd === "number" ? `$${costUsd.toFixed(4)}` : null,
+            ui.fmtDuration(generationTimeMs),
+        ]);
     } catch (error) {
-        console.error("Error during image generation:", error);
+        spin.fail(`Error during image generation: ${error.message || error}`);
+        process.exitCode = 1;
     }
 };
 
 const main = async () => {
     const options = setupCLI();
     DEBUG = options.debug || false;
-    localOutputOverride = options.out || false;
 
-    if (options.file && !options.prompt) {
-        const filePath = path.resolve(process.cwd(), options.file);
-        let stat;
-        try {
-            stat = await fs.stat(filePath);
-        } catch {
-            // missing path; let run() surface the read error.
-        }
-        if (stat?.isDirectory()) {
-            let txtFiles;
-            try {
-                const entries = await fs.readdir(filePath);
-                txtFiles = entries.filter((f) => f.endsWith(".txt")).sort();
-            } catch (error) {
-                console.error(`Failed to read directory ${filePath}:`, error);
-                process.exit(1);
-            }
-            if (txtFiles.length === 0) {
-                console.error(`No .txt files found in ${filePath}.`);
-                process.exit(1);
-            }
-            console.log(`Found ${txtFiles.length} prompt file(s) in ${filePath}: ${txtFiles.join(", ")}\n`);
-            for (const txtFile of txtFiles) {
-                const promptFilePath = path.join(filePath, txtFile);
-                console.log(`\n##\n# Processing: ${txtFile}\n##\n`);
-                await run({ ...options, file: promptFilePath, prompt: undefined });
-            }
-            return;
-        }
-    }
-
+    if (await runPromptBatch(options, run)) return;
     await run(options);
 };
 

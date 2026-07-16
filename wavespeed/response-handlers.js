@@ -1,44 +1,42 @@
-import { fetchImages } from "./utils.js";
+import * as ui from "../lib/ui.js";
+import { fetchOutputs } from "../lib/media.js";
+
+const DIR_SPEC = { envVar: "WAVESPEED_PATH", defaultDir: "images" };
+const SMOKE_MODE = process.env.WAVESPEED_SMOKE_TEST === "1";
 
 /**
- * Handle Wavespeed API response
+ * Handle a completed Wavespeed prediction: download every output URL.
  * @param {Object} result - API response from Wavespeed
  * @param {string} category - Model category (e.g., 'text-to-image')
- * @param {string} modelEndpoint - Full model endpoint ID
- * @param {boolean} localOutputOverride - Save to current directory
- * @returns {Promise<{ok: boolean, savedPaths: string[]}>} - ok flag plus saved file paths
+ * @param {boolean} localOverride - Save to current directory (--out)
+ * @returns {Promise<{ok: boolean, savedPaths: string[]}>}
  */
-export async function handleResponse(result, category, modelEndpoint, localOutputOverride = false) {
+export async function handleResponse(result, category, localOverride = false) {
   try {
     if (result.status === "failed") {
-      console.error("Generation failed:", result.error || "Unknown error");
+      ui.err(`Generation failed: ${result.error || "Unknown error"}`);
       return { ok: false, savedPaths: [] };
     }
 
     if (result && Array.isArray(result.outputs) && result.outputs.length > 0) {
-      const noun = category.endsWith("-to-video") ? "video" : "image";
-      console.log(`Downloading ${result.outputs.length} ${noun}(s)...`);
-
-      console.log("\n📎 Remote URL(s):");
-      result.outputs.forEach((url, idx) => {
-        console.log(`  [${idx + 1}] ${url}`);
+      const savedPaths = await fetchOutputs(result.outputs, DIR_SPEC, {
+        localOverride,
+        predictionId: result.id,
+        mockBuffer: SMOKE_MODE ? Buffer.from("mock wavespeed image") : null,
       });
-      console.log();
-
-      const savedPaths = await fetchImages(result.outputs, localOutputOverride, result.id);
       return { ok: true, savedPaths };
     }
 
     if (result.status === "processing" || result.status === "created") {
-      console.warn("Generation is still processing. Please check back later.");
+      ui.warn("Generation is still processing. Please check back later.");
       if (result.id) console.log(`Prediction ID: ${result.id}`);
       return { ok: true, savedPaths: [] };
     }
 
-    console.error("No outputs found in response");
+    ui.err("No outputs found in response");
     return { ok: false, savedPaths: [] };
   } catch (error) {
-    console.error(`Error handling response:`, error.message);
+    ui.err(`Error handling response: ${error.message}`);
     return { ok: false, savedPaths: [] };
   }
 }

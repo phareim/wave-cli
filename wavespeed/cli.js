@@ -6,95 +6,35 @@ export function setupCLI() {
   const program = new Command();
 
   program
+    .name("wave")
     .version("1.0.0")
-    .description(
-      "This script generates images using the Wavespeed.ai API. You can provide custom prompts, select models, and adjust settings to customize the image generation process."
-    )
-    .option(
-      "--prompt <text>",
-      'Specify the text prompt for image generation. If omitted, the content of "prompt.txt" is used.'
-    )
-    .option(
-      "--file <path>",
-      "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)"
-    )
-    .option("--model <modelKey>", "Choose the AI model to use.", DEFAULT_MODEL)
-    .option("--format <formatKey>", "Specify image size/format (e.g., '2048*2048', 'square_hd', 'portrait').")
-    .option(
-      "--images <urls...>",
-      "Input image URLs for image-to-image models (space-separated, max 10)."
-    )
-    .option(
-      "--negative-prompt <text>",
-      "Specify negative prompt to guide what to avoid in generation."
-    )
-    .option(
-      "--seed <number>",
-      "Set a seed for randomization to reproduce results."
-    )
-    .option(
-      "--aspect-ratio <ratio>",
-      "Aspect ratio for generation (e.g., '1:1', '16:9', '9:16'). Model-specific."
-    )
-    .option(
-      "--resolution <res>",
-      "Output resolution: '1k', '2k', or '4k'. Model-specific."
-    )
-    .option(
-      "--output-format <format>",
-      "Output format: 'png' or 'jpeg'. Model-specific."
-    )
-    .option(
-      "--quality <quality>",
-      "Quality setting: 'standard' or 'hd' (CogView-4 only, default: hd)."
-    )
-    .option(
-      "--num-images <number>",
-      "Number of images to generate per request (Kling only, 1-9, default: 1)."
-    )
-    .option(
-      "--duration <seconds>",
-      "Video clip length in seconds (video models only, typically 2-15)."
-    )
-    .option(
-      "--audio <url>",
-      "Audio URL to sync with the generated video (video models only)."
-    )
-    .option(
-      "--prompt-expansion",
-      "Let the model auto-expand the prompt before generation (video models only)."
-    )
-    .option(
-      "--out",
-      "Save images to the current directory instead of the default."
-    )
-    .option("--debug", "Enable debug mode to display additional logs.")
-    .option("--all-prompts", 'Generate images for all .txt files in the current directory.')
-    .option("--enable-base64", "Enable base64 output instead of URL (API only).")
-    .option("--sync", "Enable synchronous mode (wait for result in single response).")
-    .option("--count <number>", "Number of times to run the generation (default: 1).", "1")
-    .option("--optimize", "Use Wavespeed prompt optimizer to enhance the prompt before generation.")
-    .option("--optimize-mode <mode>", "Optimization mode: 'image' or 'video' (default: image).", "image")
-    .option("--optimize-style <style>", "Optimization style: default, artistic, photographic, technical, realistic, random (default: default).", "default")
-    .option("--optimize-image <url>", "Reference image URL for optimization context.")
+    .description("Generate images and video with the Wavespeed.ai API.")
+    .option("--prompt <text>", 'Text prompt. If omitted, the content of "prompt.txt" is used.')
+    .option("--file <path>", "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)")
+    .option("--model <modelKey>", "AI model to use.", DEFAULT_MODEL)
+    .option("--format <formatKey>", "Image size/format (e.g. '2048*2048', 'square', '16:9').")
+    .option("--images <urls...>", "Input image URLs for image-to-image / image-to-video models (space-separated, max 10).")
+    .option("--negative-prompt <text>", "Negative prompt to guide what to avoid in generation.")
+    .option("--seed <number>", "Seed for reproducible results.")
+    .option("--aspect-ratio <ratio>", "Aspect ratio (e.g. '1:1', '16:9'). Model-specific.")
+    .option("--resolution <res>", "Output resolution: '720p'/'1080p' (video) or '1k'/'2k'/'4k' (images). Model-specific.")
+    .option("--output-format <format>", "Output format: 'png' or 'jpeg'. Model-specific.")
+    .option("--quality <quality>", "Quality setting (gpt-image-2: low/medium/high; CogView-4: standard/hd).")
+    .option("--duration <seconds>", "Video clip length in seconds (video models only, typically 2-15).")
+    .option("--audio <url>", "Audio URL to sync with the generated video (video models only).")
+    .option("--prompt-expansion", "Let the model auto-expand the prompt before generation (video models only).")
+    .option("--count <number>", "Number of generations to run (rotates over files in batch mode).", "1")
+    .option("--optimize", "Enhance the prompt with the Wavespeed prompt optimizer before generation.")
+    .option("--optimize-style <style>", "Optimizer style: default, artistic, photographic, technical, realistic, random.", "default")
+    .option("--keywords <text>", "Generate (or rewrite) the prompt from these keywords using a Venice text model (requires VENICE_API_TOKEN).")
+    .option("--keyword-rating <rating>", "Content rating for keyword-based prompt generation (G, PG, PG13, R).", "R")
+    .option("--keyword-model <id>", "Venice text model for keyword-based prompt generation.", "zai-org-glm-4.6")
+    .option("--out", "Save outputs to the current directory instead of the default.")
     .option("--local", "Skip uploading to the aiwdm media library; only save locally.")
     .option("--aiwdm-rating <rating>", "Rating passed to aiwdm upload (G, PG, PG13, R).", "R")
     .option("--aiwdm-tags <tags>", "Extra comma-separated tags passed to aiwdm upload (source tag `wavespeed` is always added).")
     .option("--no-metadata", "Skip recording generation metadata (uploaded to aiwdm by default; written as a local sidecar with --local).")
-    .option(
-      "--keywords <text>",
-      "Generate the image prompt from these keywords using a Venice text model (overrides --prompt; requires VENICE_API_TOKEN)."
-    )
-    .option(
-      "--keyword-rating <rating>",
-      "Content rating used to steer keyword-based prompt generation (G, PG, PG13, R).",
-      "R"
-    )
-    .option(
-      "--keyword-model <id>",
-      "Venice text model used for keyword-based prompt generation.",
-      "zai-org-glm-4.6"
-    )
+    .option("--debug", "Enable debug mode to display additional logs.")
     .helpOption("-h, --help", "Display this help message.")
     .on("--help", () => {
       const availableSizes = Object.keys(image_size).join(", ");
@@ -135,78 +75,42 @@ Available Formats:
 
 Examples:
   # Basic usage (default model: turbo / Z-Image-Turbo)
-  wavespeed --prompt "A futuristic cityscape at dusk"
+  wave --prompt "A futuristic cityscape at dusk"
 
-  # Using specific models
-  wavespeed --model flux2 --prompt "Photorealistic portrait"
-  wavespeed --model turbo --prompt "Quick render of mountain landscape"
-  wavespeed --model grok --prompt "Product photography shot"
-  wavespeed --model cogview --prompt "Beautiful landscape" --quality hd
-  wavespeed --model kling --prompt "Epic fantasy scene" --resolution 2k --num-images 4
+  # Specific models and formats
+  wave --model flux2 --prompt "Photorealistic portrait"
+  wave --model gpt2 --prompt "Product shot" --quality high --resolution 2k
+  wave --prompt "An enchanted forest" --format 16:9
 
-  # With custom format/size
-  wavespeed --prompt "An enchanted forest" --format square_hd
-  wavespeed --prompt "Mountain landscape" --format 1920*1080
+  # Reproducibility and repeats
+  wave --prompt "A magical landscape" --seed 12345
+  wave --prompt "A magical landscape" --count 4
 
-  # With seed for reproducibility
-  wavespeed --prompt "A magical landscape" --seed 12345
+  # Batch: every .txt file in a directory (use --count to run multiple rounds)
+  wave --file ./prompts/
+  wave --file . --optimize --optimize-style random --count 2
 
-  # Generate multiple images
-  wavespeed --prompt "A magical landscape" --count 4
+  # Prompt helpers
+  wave --prompt "woman walking" --optimize
+  wave --keywords "rain, neon, samurai" --keyword-rating PG13
 
-  # Process all .txt files in current directory
-  wavespeed --all-prompts
-
-  # Process all .txt files in a specific directory (catalog)
-  wavespeed --file ./prompts/
-
-  # Process all .txt files with optimization and multiple generations per file
-  wavespeed --all-prompts --optimize --optimize-style random --count 2
-
-  # With prompt optimization
-  wavespeed --prompt "woman walking" --optimize
-  wavespeed --prompt "city scene" --optimize --optimize-mode video
-  wavespeed --prompt "portrait shot" --optimize --optimize-style photographic
-  wavespeed --prompt "fantasy art" --optimize --optimize-style artistic
-  wavespeed --prompt "creative scene" --optimize --optimize-style random --count 4
-
-  # Image-to-image (Z-Image-Turbo)
-  wavespeed --model turbo-i2i --images https://example.com/photo.jpg --prompt "Sharper, cinematic lighting"
-  wavespeed --model turbo-edit --images photo.jpg --prompt "Painterly style"
-
-  # Image-to-image editing (Seedream v4.5 Edit)
-  wavespeed --model seedream-edit --images https://example.com/photo.jpg --prompt "Professional headshot"
-  wavespeed --model v4.5-edit --images img1.jpg img2.jpg --prompt "Enhance lighting and color"
-
-  # Image-to-image editing (Seedream v4 Edit)
-  wavespeed --model v4-edit --images photo.jpg --prompt "Transform into oil painting style"
-  wavespeed --model seedream-v4-edit --images img1.jpg img2.jpg --prompt "Cinematic color grading"
-
-  # Image-to-image editing (WAN 2.5 Edit)
-  wavespeed --model wan-edit --images photo.jpg --prompt "Professional portrait with soft lighting"
-  wavespeed --model wan-2.5-edit --images img1.jpg --prompt "Enhance colors" --negative-prompt "oversaturated, blurry"
-
-  # Image-to-image editing (Nano Banana Pro Edit / Gemini 3.0)
-  wavespeed --model nano-edit --images photo.jpg --prompt "Transform into artwork"
-  wavespeed --model gemini-edit --images img1.jpg img2.jpg --prompt "Enhance details" --resolution 4k
-  wavespeed --model banana-edit --images photo.jpg --prompt "Professional edit" --aspect-ratio 16:9 --output-format jpeg
+  # Image-to-image editing
+  wave --model turbo-edit --images photo.jpg --prompt "Painterly style"
+  wave --model seedream-edit --images img1.jpg img2.jpg --prompt "Enhance lighting"
+  wave --model gemini-edit --images photo.jpg --prompt "Enhance details" --resolution 4k
 
   # Video generation (WAN 2.7)
-  wavespeed --model wan-video --prompt "a cat walking through a neon-lit alley" --duration 6 --resolution 1080p
-  wavespeed --model wan-t2v --prompt "aerial drone shot of a misty forest" --aspect-ratio 16:9 --duration 8
-  wavespeed --model wan-i2v --images photo.jpg --prompt "camera slowly pushes in" --duration 5
-  wavespeed --model wan-r2v --images ref1.jpg ref2.jpg --prompt "character walks through a market"
+  wave --model wan-video --prompt "a cat walking through a neon-lit alley" --duration 6 --resolution 1080p
+  wave --model wan-i2v --images photo.jpg --prompt "camera slowly pushes in" --duration 5
+  wave --model wan-r2v --images ref1.jpg ref2.jpg --prompt "character walks through a market"
 
 Notes:
-  - When using --prompt, provide the prompt as a command-line argument.
   - Without --prompt, the script reads from 'prompt.txt' in the current directory.
-  - With --all-prompts, the script processes all .txt files in the current directory.
-  - --file may also point at a directory; every .txt inside is processed in sorted order.
+  - --file may point at a directory; every .txt inside is processed in sorted order.
   - The 'WAVESPEED_KEY' environment variable must be set with your Wavespeed API key.
-  - Images are saved to the directory specified by 'WAVESPEED_PATH' or './images' by default.
+  - Outputs are saved to $WAVESPEED_PATH or './images' by default.
         `);
 
-      // Exit the process after displaying help
       process.exit(0);
     });
 
