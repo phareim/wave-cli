@@ -108,7 +108,8 @@ Available Models:
   flux-2-flex, flux2, flex              FLUX.2 [flex] - Fast, flexible text-to-image with enhanced realism
   z-image-turbo, z-image, turbo         Z-Image-Turbo - 6B parameter text-to-image, photorealistic in sub-second time
   turbo-i2i, turbo-edit, z-turbo-i2i    Z-Image-Turbo Image-to-Image - 6B parameter i2i, sub-second transforms
-  seedream-v4.5, seedream, v4.5         Seedream v4.5 - Latest text-to-image by ByteDance (8K)
+  seedream-v5-pro, seedream-v5, v5      Seedream v5.0 Pro - ByteDance flagship t2i, aspect_ratio + resolution (1k/2k)
+  seedream-v4.5, seedream, v4.5         Seedream v4.5 - Text-to-image by ByteDance (8K)
   seedream-v4.5-edit, seedream-edit     Seedream v4.5 Edit - High-fidelity editing with reference preservation (8K)
   seedream-v4.5-sequential, v4.5-seq    Seedream v4.5 Sequential - Multi-image sets with consistent characters (8K)
   seedream-v4.5-edit-sequential         Seedream v4.5 Edit Sequential - Multi-image editing with identity lock (8K)

@@ -215,6 +215,7 @@ The `constrainDimensions()` function automatically scales down requested dimensi
 - `flux-2-flex` (FLUX.2 [flex]): 1536x1536 max
 - `z-image-turbo` (Z-Image-Turbo, default text-to-image): 1536x1536 max
 - `z-image-turbo/image-to-image` (turbo-i2i): 1536x1536 max — uses singular `image` field, not `images` array (handled via `singleImageInput` metadata flag)
+- `seedream-v5-pro` (Seedream v5.0 Pro, aliases `seedream-v5`/`v5`): no size — takes `aspect_ratio` + `resolution` (1k/2k) via `noSize`/`noSeed`/`defaultResolution` metadata flags, same pattern as `gpt-image-2`
 - `seedream-v5-lite` family (base, edit, sequential, edit-sequential): 4096x4096 max
 - `seedream-v4.5` family (base, edit, sequential, edit-sequential): 8192x8192 max
 - `seedream-v4` (Seedream v4): 4096x4096 max

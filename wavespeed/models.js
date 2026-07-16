@@ -15,6 +15,11 @@ export const modelEndpoints = {
   "z-turbo-i2i": "wavespeed-ai/z-image-turbo/image-to-image",
   "turbo-i2i": "wavespeed-ai/z-image-turbo/image-to-image",
   "turbo-edit": "wavespeed-ai/z-image-turbo/image-to-image",
+  "seedream-v5-pro": "bytedance/seedream-v5.0-pro",
+  "seedream-v5": "bytedance/seedream-v5.0-pro",
+  "seedream-pro": "bytedance/seedream-v5.0-pro",
+  "v5-pro": "bytedance/seedream-v5.0-pro",
+  "v5": "bytedance/seedream-v5.0-pro",
   "seedream-v5-lite": "bytedance/seedream-v5.0-lite",
   "v5-lite": "bytedance/seedream-v5.0-lite",
   "seedream-v5-lite-edit": "bytedance/seedream-v5.0-lite/edit",
@@ -120,6 +125,20 @@ export const allModels = [
       maxWidth: 1536,
       maxHeight: 1536,
       singleImageInput: true,
+    }
+  },
+  {
+    endpoint_id: "bytedance/seedream-v5.0-pro",
+    metadata: {
+      display_name: "Seedream v5.0 Pro",
+      category: "text-to-image",
+      description: "ByteDance Seedream 5.0 Pro — flagship text-to-image with strong prompt following, aspect-ratio selection, and 1k/2k output tiers. Takes aspect_ratio + resolution, no size or seed.",
+      status: "live",
+      tags: ["bytedance", "text-to-image", "pro", "v5"],
+      model_url: "https://wavespeed.ai/models/bytedance/seedream-v5.0-pro",
+      noSize: true,
+      noSeed: true,
+      defaultResolution: "1k",
     }
   },
   {
