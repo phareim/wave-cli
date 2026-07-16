@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import path from "path";
-import fs from "fs/promises";
 
 import { setupCLI } from "./cli.js";
 import { getModelEndpoint, getModelInfo, constrainDimensions } from "./models.js";
@@ -10,19 +9,12 @@ import { buildParameters } from "./parameter-builders.js";
 import { handleResponse } from "./response-handlers.js";
 import * as ui from "../lib/ui.js";
 import { publishOutputs } from "../lib/aiwdm.js";
-import { resolvePrompt, listPromptFiles } from "../lib/prompts.js";
+import { resolvePrompt, listPromptFiles, promptBatchDir } from "../lib/prompts.js";
+import { parseFormat, fitRatioToBox, toAspectRatio } from "../lib/format.js";
 
 let DEBUG = false;
 const SMOKE_MODE = process.env.WAVESPEED_SMOKE_TEST === "1";
 const VALID_OPTIMIZE_STYLES = ["default", "artistic", "photographic", "technical", "realistic"];
-
-const deriveAspectRatio = (sizeStr) => {
-  const [w, h] = String(sizeStr).split("*").map(Number);
-  if (!w || !h) return null;
-  const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
-  const g = gcd(w, h);
-  return `${w / g}:${h / g}`;
-};
 
 const authHeaders = (extra = {}) => ({
   Authorization: `Bearer ${process.env.WAVESPEED_KEY}`,
@@ -294,7 +286,7 @@ const generateBatch = async (modelEndpoint, size, options) => {
 
     const { prompt, originalPrompt: userPromptForRewrite } = await resolvePrompt(options, { debug: DEBUG });
     if (!prompt) {
-      ui.err("No prompt provided. Use --prompt, --file, --keywords, or create a ./prompt.txt file.");
+      ui.err("No prompt provided. Use --prompt (text, file, or directory), --keywords, or create ./prompt.txt.");
       process.exit(1);
     }
 
@@ -328,57 +320,64 @@ const main = async () => {
   }
 
   const modelEndpoint = getModelEndpoint(options.model);
-  const sizeFromFormat = image_size[options.format] || options.format || "4096*4096";
-  const size = constrainDimensions(sizeFromFormat, modelEndpoint);
-
-  // noSize models (e.g. gpt-image-2) take aspect_ratio instead of size, so
-  // --format would otherwise be silently dropped. Translate the format key
-  // into an aspect ratio when we can derive one; warn when we can't.
   const modelInfo = getModelInfo(modelEndpoint);
-  if (options.format && modelInfo?.metadata?.noSize) {
-    if (options.aspectRatio) {
-      ui.warn(`--format '${options.format}' ignored — --aspect-ratio '${options.aspectRatio}' takes precedence for this model.`);
-    } else {
-      const derived = deriveAspectRatio(sizeFromFormat);
-      if (derived) {
-        ui.warn(`this model takes aspect_ratio, not size — translating --format '${options.format}' → --aspect-ratio '${derived}'.`);
-        options.aspectRatio = derived;
+  const category = modelInfo?.metadata?.category || "text-to-image";
+  const takesAspectRatio = modelInfo?.metadata?.noSize === true || category.endsWith("-to-video");
+
+  // One --format flag, two API shapes: aspect-ratio models (video, gpt-image-2,
+  // seedream-v5-pro) get a ratio — user-typed ratios pass through verbatim,
+  // named/pixel formats are reduced — while pixel models get a "W*H" size
+  // constrained to the model's max dimensions.
+  let size;
+  if (takesAspectRatio) {
+    if (options.format) {
+      const ratio = toAspectRatio(options.format, image_size);
+      if (ratio) {
+        options.aspectRatio = ratio;
       } else {
-        ui.warn(`--format '${options.format}' ignored — this model takes aspect_ratio, not size. Use --aspect-ratio explicitly.`);
+        ui.warn(`--format '${options.format}' not understood — this model takes an aspect ratio like 2:3 or 16:9.`);
       }
     }
+  } else {
+    const f = parseFormat(options.format);
+    let sizeStr = "4096*4096";
+    if (f?.type === "pixels") {
+      sizeStr = `${f.width}*${f.height}`;
+    } else if (f?.type === "ratio") {
+      // Prefer the curated pixel mapping for known ratios; otherwise scale to the 4096 box.
+      const fit = fitRatioToBox(f.w, f.h, 4096);
+      sizeStr = image_size[f.ratio] || `${fit.width}*${fit.height}`;
+    } else if (f?.type === "named") {
+      if (image_size[f.name]) {
+        sizeStr = image_size[f.name];
+      } else {
+        ui.warn(`Unknown format '${options.format}'. Valid: ${Object.keys(image_size).join(", ")}, W:H, W*H. Using 4096*4096.`);
+      }
+    }
+    size = constrainDimensions(sizeStr, modelEndpoint);
   }
 
-  // --file <dir> batch mode: process every direct-child .txt file. --count
+  // --prompt <dir> batch mode: process every direct-child .txt file. --count
   // rotates over the file list rather than running each file count times
   // back-to-back: 3 files with --count 2 → file1, file2, file3, file1, …
-  if (options.file && !options.prompt) {
-    const dirPath = path.resolve(process.cwd(), options.file);
-    let isDir = false;
-    try {
-      isDir = (await fs.stat(dirPath)).isDirectory();
-    } catch {
-      // Missing path; let the single-file branch report it.
-    }
-    if (isDir) {
-      const txtFiles = await listPromptFiles(dirPath);
-      ui.batchHeader(dirPath, txtFiles.length);
+  const batchDir = await promptBatchDir(options);
+  if (batchDir) {
+    const txtFiles = await listPromptFiles(batchDir);
+    ui.batchHeader(batchDir, txtFiles.length);
 
-      const rounds = parseInt(options.count, 10) || 1;
-      const perFileOptions = { ...options, count: "1" };
-      for (let round = 0; round < rounds; round++) {
-        if (rounds > 1) ui.roundHeader("round", round + 1, rounds);
-        for (let i = 0; i < txtFiles.length; i++) {
-          ui.fileHeader(txtFiles[i], i + 1, txtFiles.length);
-          await generateBatch(modelEndpoint, size, {
-            ...perFileOptions,
-            file: path.resolve(dirPath, txtFiles[i]),
-            prompt: undefined,
-          });
-        }
+    const rounds = parseInt(options.count, 10) || 1;
+    const perFileOptions = { ...options, count: "1" };
+    for (let round = 0; round < rounds; round++) {
+      if (rounds > 1) ui.roundHeader("round", round + 1, rounds);
+      for (let i = 0; i < txtFiles.length; i++) {
+        ui.fileHeader(txtFiles[i], i + 1, txtFiles.length);
+        await generateBatch(modelEndpoint, size, {
+          ...perFileOptions,
+          prompt: path.resolve(batchDir, txtFiles[i]),
+        });
       }
-      return;
     }
+    return;
   }
 
   await generateBatch(modelEndpoint, size, options);

@@ -6,6 +6,7 @@ import * as ui from "../lib/ui.js";
 import { saveMedia } from "../lib/media.js";
 import { publishOutputs } from "../lib/aiwdm.js";
 import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
+import { toAspectRatio } from "../lib/format.js";
 
 const SMOKE_MODE = process.env.XAI_SMOKE_TEST === "1";
 const DIR_SPEC = { envVar: "XAI_PATH", defaultDir: "images/xai" };
@@ -64,7 +65,7 @@ const run = async (options) => {
 
     const { prompt } = await resolvePrompt(options, { debug: DEBUG });
     if (!prompt) {
-        ui.err("No prompt provided. Use --prompt, --file, or create a ./prompt.txt file.");
+        ui.err("No prompt provided. Use --prompt (text, file, or directory) or create ./prompt.txt.");
         process.exit(1);
     }
     options.prompt = prompt;
@@ -74,7 +75,9 @@ const run = async (options) => {
         model: options.model,
         prompt,
         n,
-        aspect_ratio: options.aspectRatio,
+        // Ratio-typed formats pass through verbatim; unresolvable values go to
+        // the API as-is (it decides what's valid).
+        aspect_ratio: toAspectRatio(options.format) || options.format,
         resolution: options.resolution,
         response_format: "b64_json"
     };

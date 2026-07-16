@@ -9,14 +9,12 @@ export function setupCLI() {
     .name("wave")
     .version("1.0.0")
     .description("Generate images and video with the Wavespeed.ai API.")
-    .option("--prompt <text>", 'Text prompt. If omitted, the content of "prompt.txt" is used.')
-    .option("--file <path>", "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)")
+    .option("--prompt <text|file|dir>", "Prompt text, a file to read it from, or a directory of .txt prompts (default: ./prompt.txt).")
     .option("--model <modelKey>", "AI model to use.", DEFAULT_MODEL)
-    .option("--format <formatKey>", "Image size/format (e.g. '2048*2048', 'square', '16:9').")
+    .option("--format <format>", "Size/aspect: named (square, wide, …), ratio ('2:3', '16:9'), or pixels ('2048*2048'). Ratio-based models (video, gpt-image-2, seedream-v5-pro) get the ratio; pixel models get pixels.")
     .option("--images <urls...>", "Input image URLs for image-to-image / image-to-video models (space-separated, max 10).")
     .option("--negative-prompt <text>", "Negative prompt to guide what to avoid in generation.")
     .option("--seed <number>", "Seed for reproducible results.")
-    .option("--aspect-ratio <ratio>", "Aspect ratio (e.g. '1:1', '16:9'). Model-specific.")
     .option("--resolution <res>", "Output resolution: '720p'/'1080p' (video) or '1k'/'2k'/'4k' (images). Model-specific.")
     .option("--output-format <format>", "Output format: 'png' or 'jpeg'. Model-specific.")
     .option("--quality <quality>", "Quality setting (gpt-image-2: low/medium/high; CogView-4: standard/hd).")
@@ -80,15 +78,16 @@ Examples:
   # Specific models and formats
   wave --model flux2 --prompt "Photorealistic portrait"
   wave --model gpt2 --prompt "Product shot" --quality high --resolution 2k
+  wave --model v5 --prompt "Editorial portrait" --format 2:3
   wave --prompt "An enchanted forest" --format 16:9
 
   # Reproducibility and repeats
   wave --prompt "A magical landscape" --seed 12345
   wave --prompt "A magical landscape" --count 4
 
-  # Batch: every .txt file in a directory (use --count to run multiple rounds)
-  wave --file ./prompts/
-  wave --file . --optimize --optimize-style random --count 2
+  # Batch: --prompt <dir> runs every .txt inside (--count rotates over the files)
+  wave --prompt ./prompts/
+  wave --prompt . --optimize --optimize-style random --count 2
 
   # Prompt helpers
   wave --prompt "woman walking" --optimize
@@ -101,12 +100,12 @@ Examples:
 
   # Video generation (WAN 2.7)
   wave --model wan-video --prompt "a cat walking through a neon-lit alley" --duration 6 --resolution 1080p
-  wave --model wan-i2v --images photo.jpg --prompt "camera slowly pushes in" --duration 5
+  wave --model wan-i2v --images photo.jpg --prompt "camera slowly pushes in" --duration 5 --format 16:9
   wave --model wan-r2v --images ref1.jpg ref2.jpg --prompt "character walks through a market"
 
 Notes:
   - Without --prompt, the script reads from 'prompt.txt' in the current directory.
-  - --file may point at a directory; every .txt inside is processed in sorted order.
+  - --prompt may also name a file (read as the prompt) or a directory (every .txt inside runs, sorted).
   - The 'WAVESPEED_KEY' environment variable must be set with your Wavespeed API key.
   - Outputs are saved to $WAVESPEED_PATH or './images' by default.
         `);

@@ -3,8 +3,9 @@
 import { setupVideoCLI, resolveVideoModel } from "./video-cli.js";
 import * as ui from "../lib/ui.js";
 import { publishOutputs } from "../lib/aiwdm.js";
-import { readPromptFromFile, runPromptBatch } from "../lib/prompts.js";
+import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
 import { queueJob, pollUntilReady, saveVideo } from "../lib/venice-video.js";
+import { toAspectRatio } from "../lib/format.js";
 
 const SMOKE_MODE = process.env.VENICE_SMOKE_TEST === "1";
 
@@ -39,17 +40,12 @@ const run = async (options) => {
     process.exit(1);
   }
 
-  if (!options.prompt) {
-    const promptFilePath = options.file || "./prompt.txt";
-    const fromFile = await readPromptFromFile(promptFilePath);
-    if (fromFile) {
-      options.prompt = fromFile;
-      ui.info(`prompt from ${promptFilePath}`);
-    } else {
-      ui.err("No prompt provided. Use --prompt, --file, or create ./prompt.txt.");
-      process.exit(1);
-    }
+  const { prompt } = await resolvePrompt(options);
+  if (!prompt) {
+    ui.err("No prompt provided. Use --prompt (text, file, or directory) or create ./prompt.txt.");
+    process.exit(1);
   }
+  options.prompt = prompt;
 
   const modelEntry = resolveVideoModel(options.model);
   if (!modelEntry) {
@@ -68,6 +64,9 @@ const run = async (options) => {
 
   const seedProvidedByUser = options.seed !== undefined;
   if (!seedProvidedByUser) options.seed = randomSeed();
+
+  // --format → aspect ratio (only text-to-video accepts one).
+  options.aspectRatio = toAspectRatio(options.format) || options.format;
 
   const body = buildQueueBody(options, modelEntry);
   if (DEBUG) console.log("Queue body:", JSON.stringify(body, null, 2));

@@ -32,10 +32,15 @@ lib/
 ├── aiwdm.js         # uploadToAiwdm (shell-out, metadata via temp JSON file, cwd anchored
 │                    # to the aiwdm CLI dir), slugifyModelTag, publishOutputs — the shared
 │                    # "upload to aiwdm OR write local sidecar" flow every generator ends with
-├── prompts.js       # readPromptFromFile, resolvePrompt (--prompt → --file/prompt.txt →
-│                    # --keywords generate/rewrite via Venice chat), runPromptBatch
-│                    # (--file <dir> loop), listPromptFiles, generatePromptFromKeywords,
-│                    # VALID_RATINGS
+├── prompts.js       # readPromptFromFile, resolvePrompt (--prompt as literal text /
+│                    # existing file / ./prompt.txt fallback → --keywords generate/rewrite
+│                    # via Venice chat), promptBatchDir + runPromptBatch (--prompt <dir>
+│                    # loop), listPromptFiles, generatePromptFromKeywords, VALID_RATINGS
+├── format.js        # parseFormat (named | "W:H" ratio | "WxH"/"W*H" pixels),
+│                    # toAspectRatio, fitRatioToBox, reduceRatio, NAMED_RATIOS — the one
+│                    # --format flag every CLI shares. User-typed ratios are NEVER
+│                    # round-tripped through pixels (2:3 → 2732*4096 → 683:1024 was the
+│                    # bug that broke seedream-v5-pro).
 └── venice-video.js  # Venice /video/queue + /video/retrieve polling core (content-type
                      # flip to video/mp4 is the completion signal), saveVideo,
                      # resolveImageInput (local file → base64 data URI), isHttpUrl
@@ -74,15 +79,30 @@ Every generator prints the same shapes: `◆ name · kind` banner, aligned `kv()
 
 ### Prompt resolution (lib/prompts.js)
 
-1. `--prompt` wins; else `--file <path>` (default `./prompt.txt`).
-2. `--file <dir>` (all CLIs): `runPromptBatch` runs the generator once per direct-child `.txt` file, sorted, non-recursive. Wavespeed implements its own loop on `listPromptFiles` because `--count` rotates *over* the file list (3 files × `--count 2` → a,b,c,a,b,c) with `↻ round x/n` headers.
-3. `--keywords "<csv>"` (venice + wave): `resolvePrompt` calls Venice chat completions — generate mode with no prompt, rewrite mode when a prompt exists (original preserved as `original_prompt` in the metadata). Flags: `--keyword-rating <G|PG|PG13|R>` (default R), `--keyword-model <id>` (default `zai-org-glm-4.6`). Always Venice — `VENICE_API_TOKEN` required even from `wave`.
+One `--prompt` flag, disambiguated by what exists on disk (there is no `--file`):
+
+1. Literal text — anything that isn't an existing path.
+2. An existing **file** — read as the prompt (`resolvePrompt`).
+3. An existing **directory** — `runPromptBatch` runs the generator once per direct-child `.txt` file, sorted, non-recursive. Wavespeed implements its own loop on `promptBatchDir` + `listPromptFiles` because `--count` rotates *over* the file list (3 files × `--count 2` → a,b,c,a,b,c) with `↻ round x/n` headers.
+4. No `--prompt` — falls back to `./prompt.txt`.
+
+`--keywords "<csv>"` (venice + wave): `resolvePrompt` calls Venice chat completions — generate mode with no prompt, rewrite mode when a prompt exists (original preserved as `original_prompt` in the metadata). Flags: `--keyword-rating <G|PG|PG13|R>` (default R), `--keyword-model <id>` (default `zai-org-glm-4.6`). Always Venice — `VENICE_API_TOKEN` required even from `wave`.
+
+### Format resolution (lib/format.js)
+
+One `--format` flag on every CLI (no `--aspect-ratio`, no venice `--width`/`--height`): named (`square`, `wide`, …), ratio (`"2:3"`), or pixels (`"1024x1280"`/`"2048*2048"`). Each CLI converts to what its API takes:
+
+- **venice**: → width/height. Named via `venice/config.js image_size`; ratios scaled into the 1280 box; everything floored to the model's divisor grid. Default 1024×1024.
+- **wave pixel models**: → `"W*H"` size. Known ratio keys use the curated `image_size` map; other ratios scale into the 4096 box; then `constrainDimensions`.
+- **wave aspect models** (noSize + `-to-video` categories): → `aspect_ratio` via `toAspectRatio` — a user-typed ratio passes through verbatim; named/pixel formats are reduced.
+- **imagine / venice-video**: → `aspect_ratio` verbatim (named via `NAMED_RATIOS`); unresolvable values go to the API as-is.
 
 ### Removed flags (2026-07-16 streamlining — do not reintroduce without cause)
 
-- venice: `--return-binary` (always true), `--hide-watermark` (was a no-op; always on), `--embed-exif-metadata`, `--variants` (was broken: flipping return_binary off made the JSON response read as an error). `--steps` now defaults to the model's own default instead of a global 20.
-- wave: `--enable-base64` (would break the URL download path), `--sync` (completed-in-initial-response is handled anyway), `--all-prompts` (use `--file .`), `--optimize-mode` (derived from the model category), `--optimize-image`, `--num-images` (use `--count`).
-- `tools/replay.js` ignores the corresponding legacy sidecar fields, so old sidecars still replay.
+- everywhere: `--file` (folded into `--prompt`), `--aspect-ratio` (folded into `--format`).
+- venice: `--width`/`--height` (use `--format WxH`), `--return-binary` (always true), `--hide-watermark` (was a no-op; always on), `--embed-exif-metadata`, `--variants` (was broken: flipping return_binary off made the JSON response read as an error). `--steps` now defaults to the model's own default instead of a global 20.
+- wave: `--enable-base64` (would break the URL download path), `--sync` (completed-in-initial-response is handled anyway), `--all-prompts` (use `--prompt .`), `--optimize-mode` (derived from the model category), `--optimize-image`, `--num-images` (use `--count`).
+- `tools/replay.js` translates or ignores the corresponding legacy sidecar fields (width/height → `--format WxH`, aspect_ratio → `--format`), so old sidecars still replay.
 
 ### Authentication
 

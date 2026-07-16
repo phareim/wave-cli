@@ -9,7 +9,7 @@ Shared plumbing (terminal UI, file I/O, aiwdm upload, prompt resolution, Venice 
 - `npm test`: runs `tests/smoke.test.js` with mocked network responses.
 
 ## Coding Style & Naming Conventions
-JavaScript files use ES modules, 4-space indentation, and single quotes for strings unless interpolation requires template literals. CLI flags prefer kebab-case (e.g., `--file`). Functions are camelCase (`getModelConstraints`), constants are SCREAMING_SNAKE_CASE, and file names stay lowercase with hyphens where needed (`get-models.js`). Run `node venice/index.js --help` and `node wavespeed/index.js --help` after large edits to ensure flag descriptions match implementation.
+JavaScript files use ES modules, 4-space indentation, and single quotes for strings unless interpolation requires template literals. CLI flags prefer kebab-case (e.g., `--negative-prompt`). Functions are camelCase (`getModelConstraints`), constants are SCREAMING_SNAKE_CASE, and file names stay lowercase with hyphens where needed (`get-models.js`). Run `node venice/index.js --help` and `node wavespeed/index.js --help` after large edits to ensure flag descriptions match implementation.
 
 ## Testing Guidelines
 Run `npm test` to execute `tests/smoke.test.js`, which spawns each CLI with mock network responses (via `*_SMOKE_TEST=1`) and verifies files land in temp directories. Extend that suite when adding new providers or output types. For manual checks, still spot-test:

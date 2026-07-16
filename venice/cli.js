@@ -6,8 +6,6 @@ import {
   stylePresets as dynamicStylePresets
 } from "./models.js";
 import {
-  DEFAULT_WIDTH,
-  DEFAULT_HEIGHT,
   DEFAULT_CFG_SCALE,
   DEFAULT_FORMAT,
   stylePresets as fallbackStylePresets,
@@ -24,13 +22,10 @@ export function setupCLI() {
     .name("venice")
     .version("1.0.0")
     .description("Generate images with the Venice.ai image API.")
-    .option("--prompt <text>", "Text prompt for image generation.")
-    .option("--file <path>", "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)")
+    .option("--prompt <text|file|dir>", "Prompt text, a file to read it from, or a directory of .txt prompts (default: ./prompt.txt).")
     .option("--negative-prompt <text>", "Negative prompt to guide what not to generate.")
     .option("--model <modelKey>", "AI model to use.", defaultModel)
-    .option("--format <formatKey>", "Named image size (square, portrait, landscape, wide, tall).")
-    .option("--width <number>", "Image width", parseFloat, DEFAULT_WIDTH)
-    .option("--height <number>", "Image height", parseFloat, DEFAULT_HEIGHT)
+    .option("--format <format>", "Image size: named (square, portrait, landscape, wide, tall), ratio ('2:3'), or pixels ('1024x1280'). Default 1024x1024.")
     .option("--steps <number>", "Number of inference steps (default: the model's own default)", parseFloat)
     .option("--cfg-scale <number>", "Classifier-free guidance scale", parseFloat, DEFAULT_CFG_SCALE)
     .option("--seed <number>", "Random seed for reproducibility", parseFloat)
@@ -75,9 +70,9 @@ ${stylePresets.join(", ")}
 Examples:
   venice --prompt "A futuristic cityscape at dusk" --model venice-sd35
   venice --prompt "A serene landscape" --format wide --lora Photographic
-  venice --prompt "A cyberpunk scene" --steps 30 --cfg-scale 9 --seed 42
+  venice --prompt "A cyberpunk scene" --format 2:3 --steps 30 --seed 42
   venice --keywords "neon, rain, alley" --keyword-rating PG13
-  venice --file ./prompts/
+  venice --prompt ./prompts/
   venice --prompt "Surprise me" --random-lora
 
 Notes:

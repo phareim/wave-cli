@@ -47,8 +47,7 @@ const buildVeniceArgs = (m) => {
   push(args, "--model", m.model_key || m.model);
   push(args, "--prompt", m.prompt);
   push(args, "--negative-prompt", m.negative_prompt);
-  push(args, "--width", m.width);
-  push(args, "--height", m.height);
+  if (m.width && m.height) push(args, "--format", `${m.width}x${m.height}`);
   push(args, "--steps", m.steps);
   push(args, "--cfg-scale", m.cfg_scale);
   push(args, "--seed", m.seed);
@@ -67,7 +66,7 @@ const buildVeniceVideoArgs = (m) => {
   push(args, "--negative-prompt", m.negative_prompt);
   push(args, "--duration", m.duration);
   push(args, "--resolution", m.resolution);
-  push(args, "--aspect-ratio", m.aspect_ratio);
+  push(args, "--format", m.aspect_ratio);
   push(args, "--seed", m.seed);
   push(args, "--image-url", m.image_url);
   push(args, "--video-url", m.video_url);
@@ -83,7 +82,7 @@ const buildXaiArgs = (m) => {
   push(args, "--model", m.model_key || m.model);
   push(args, "--prompt", m.prompt);
   push(args, "--n", m.n);
-  push(args, "--aspect-ratio", m.aspect_ratio);
+  push(args, "--format", m.aspect_ratio);
   push(args, "--resolution", m.resolution);
   return args;
 };
@@ -95,8 +94,10 @@ const buildWavespeedArgs = (m) => {
   // The optimizer is non-deterministic, so re-running it would diverge from the saved output.
   push(args, "--prompt", m.prompt);
   push(args, "--negative-prompt", m.negative_prompt);
-  if (m.kind !== "video") push(args, "--format", m.size);
-  push(args, "--aspect-ratio", m.aspect_ratio);
+  // --format carries either the pixel size (pixel models) or the aspect
+  // ratio (video / noSize models) — never both.
+  if (m.kind !== "video" && m.size) push(args, "--format", m.size);
+  else push(args, "--format", m.aspect_ratio);
   push(args, "--resolution", m.resolution);
   push(args, "--duration", m.duration);
   push(args, "--audio", m.audio);

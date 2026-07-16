@@ -18,6 +18,7 @@ import * as ui from "../lib/ui.js";
 import { saveMedia } from "../lib/media.js";
 import { publishOutputs } from "../lib/aiwdm.js";
 import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
+import { parseFormat, fitRatioToBox } from "../lib/format.js";
 
 const VENICE_API_URL = "https://api.venice.ai/api/v1/image/generate";
 const SMOKE_MODE = process.env.VENICE_SMOKE_TEST === "1";
@@ -51,12 +52,27 @@ let DEBUG = false;
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
+// --format accepts a named size (square, wide, …), a ratio ("2:3" — scaled to
+// fill the 1280 box), or explicit pixels ("1024x1280"). Default 1024×1024.
+const resolveDimensions = (format) => {
+    const f = parseFormat(format);
+    if (f?.type === "pixels") return { width: f.width, height: f.height };
+    if (f?.type === "ratio") return fitRatioToBox(f.w, f.h, 1280);
+    if (f?.type === "named") {
+        const named = image_size[f.name];
+        if (named) return named;
+        ui.warn(`Unknown format '${format}'. Valid: ${Object.keys(image_size).join(", ")}, W:H, WxH. Using ${DEFAULT_WIDTH}×${DEFAULT_HEIGHT}.`);
+    }
+    return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+};
+
 const buildInput = (options) => {
     const constraints = getModelConstraints(options.model);
     const divisor = constraints.widthHeightDivisor;
 
-    let _width = Math.min(parseInt(options.width) || DEFAULT_WIDTH, 1280);
-    let _height = Math.min(parseInt(options.height) || DEFAULT_HEIGHT, 1280);
+    const requested = resolveDimensions(options.format);
+    let _width = Math.min(requested.width, 1280);
+    let _height = Math.min(requested.height, 1280);
     _width = Math.floor(_width / divisor) * divisor;
     _height = Math.floor(_height / divisor) * divisor;
 
@@ -85,14 +101,6 @@ const buildInput = (options) => {
         input.lora_strength = Math.min(Math.max(parseInt(options.loraStrength), 0), 100);
     }
 
-    if (options.format) {
-        const formatSize = image_size[options.format];
-        if (formatSize) {
-            input.width = formatSize.width;
-            input.height = formatSize.height;
-        }
-    }
-
     return input;
 };
 
@@ -104,7 +112,7 @@ const run = async (options) => {
 
     const { prompt, originalPrompt } = await resolvePrompt(options, { debug: DEBUG });
     if (!prompt) {
-        ui.err("No prompt provided. Use --prompt, --file, --keywords, or create a ./prompt.txt file.");
+        ui.err("No prompt provided. Use --prompt (text, file, or directory), --keywords, or create ./prompt.txt.");
         process.exit(1);
     }
     options.prompt = prompt;

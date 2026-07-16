@@ -45,7 +45,7 @@ export XAI_API_KEY="…"        # imagine
 # Images
 venice --prompt "A futuristic cityscape at dusk"
 wave --model flux2 --prompt "Photorealistic portrait"
-imagine --prompt "Portrait" --aspect-ratio 9:16 --resolution 2k
+imagine --prompt "Portrait" --format 9:16 --resolution 2k
 
 # Video
 venice-video --prompt "a neon-lit alley at night" --duration 10s --resolution 1080p
@@ -59,18 +59,37 @@ wave --prompt "A magical landscape" --count 4
 
 Run any command with `--help` for its full model list and options.
 
-### Prompts: flag, file, directory, or keywords
+### One `--prompt` flag: text, file, or directory
 
-Every generator resolves its prompt the same way:
+Every generator resolves its prompt the same way, based on what the value names on disk:
 
-1. `--prompt "text"` wins.
-2. Otherwise `--file <path>` (default `./prompt.txt`).
-3. `--file <dir>` runs once per `.txt` file in the directory (sorted, non-recursive). With `wave`, `--count N` rotates over the file list N times (`a, b, a, b` — not `a, a, b, b`).
-4. `--keywords "<csv>"` (venice + wave) asks a Venice text model to write a prompt from the keywords — or, when a prompt is also supplied, to rewrite it so it incorporates them. Steer with `--keyword-rating <G|PG|PG13|R>` and `--keyword-model <id>`. Always calls Venice, so `wave --keywords` needs `VENICE_API_TOKEN` too.
+1. `--prompt "literal text"` — anything that isn't an existing file.
+2. `--prompt path/to/file.txt` — an existing file is read as the prompt.
+3. `--prompt ./dir/` — an existing directory runs once per `.txt` file inside (sorted, non-recursive). With `wave`, `--count N` rotates over the file list N times (`a, b, a, b` — not `a, a, b, b`).
+4. No `--prompt` at all — falls back to `./prompt.txt`.
+
+`--keywords "<csv>"` (venice + wave) asks a Venice text model to write a prompt from the keywords — or, when a prompt is also supplied, to rewrite it so it incorporates them. Steer with `--keyword-rating <G|PG|PG13|R>` and `--keyword-model <id>`. Always calls Venice, so `wave --keywords` needs `VENICE_API_TOKEN` too.
 
 ```bash
 venice --keywords "neon alley, trench coat, rain" --keyword-rating PG13
-wave --file ./prompts/ --count 2
+wave --prompt ./prompts/ --count 2
+```
+
+### One `--format` flag: named, ratio, or pixels
+
+`--format` is the single shape/size flag everywhere (it replaced `--aspect-ratio` and venice's `--width`/`--height`):
+
+- **named** — `square`, `portrait`, `landscape`, `wide`, `tall`
+- **ratio** — `2:3`, `16:9`, … forwarded *verbatim* to models that take an aspect ratio (all video models, `gpt-image-2`, `seedream-v5-pro`, `imagine`)
+- **pixels** — `1024x1280` or `2048*2048` for pixel-size models (auto-constrained to each model's max dimensions)
+
+Whichever spelling you use is converted to what the target model actually accepts:
+
+```bash
+wave --model v5 --prompt "editorial portrait" --format 2:3   # ratio → aspect_ratio 2:3
+wave --prompt "wide shot" --format 16:9                      # ratio → 4096*2304 pixels for a pixel model
+venice --prompt "test" --format 1024x768                     # pixels, clamped to 1280 and the 16-grid
+venice-video --prompt "vertical clip" --format 9:16
 ```
 
 ### Prompt optimization (wave only)

@@ -395,7 +395,7 @@ test("wavespeed --file <directory> processes every .txt inside", () => {
     // same sidecar on disk — assert via stdout that both .txt files were visited
     // (and that skip.md was filtered out).
     const result = runCli(
-      ["wavespeed/index.js", "--file", promptDir],
+      ["wavespeed/index.js", "--prompt", promptDir],
       {
         WAVESPEED_KEY: "test-key",
         WAVESPEED_SMOKE_TEST: "1",
@@ -422,7 +422,7 @@ test("wavespeed --file <directory> --count rotates files instead of repeating ea
     fs.writeFileSync(path.join(promptDir, "b.txt"), "second prompt");
 
     const result = runCli(
-      ["wavespeed/index.js", "--file", promptDir, "--count", "2"],
+      ["wavespeed/index.js", "--prompt", promptDir, "--count", "2"],
       {
         WAVESPEED_KEY: "test-key",
         WAVESPEED_SMOKE_TEST: "1",
@@ -459,7 +459,7 @@ test("venice --file <directory> processes every .txt inside", () => {
     fs.writeFileSync(path.join(promptDir, "b.txt"), "beta prompt");
 
     runCli(
-      ["venice/index.js", "--file", promptDir],
+      ["venice/index.js", "--prompt", promptDir],
       {
         VENICE_API_TOKEN: "test-token",
         VENICE_SMOKE_TEST: "1",
@@ -616,6 +616,85 @@ test("imagine reads prompt from ./prompt.txt when no --prompt or --file given", 
   }
 });
 
+test("wavespeed --format ratio passes through verbatim on aspect-ratio models", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "wavespeed-v5-format-"));
+  try {
+    runCli(
+      ["wavespeed/index.js", "--model", "v5", "--prompt", "smoke test", "--format", "2:3"],
+      {
+        WAVESPEED_KEY: "test-key",
+        WAVESPEED_SMOKE_TEST: "1",
+        WAVESPEED_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const sidecar = files.find((f) => f.endsWith(".json"));
+    assert(sidecar, "Expected wavespeed sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    // The regression this guards: 2:3 used to be mapped to 2732*4096 pixels
+    // and re-derived as 683:1024, which the seedream-v5-pro API rejects.
+    assert.equal(metadata.aspect_ratio, "2:3", "Ratio must reach the API verbatim, not via pixels");
+    assert.equal(metadata.size, undefined, "noSize models must not receive a size");
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("venice --format accepts ratio and pixel spellings", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "venice-format-"));
+  try {
+    runCli(
+      ["venice/index.js", "--prompt", "smoke test", "--format", "2:3"],
+      {
+        VENICE_API_TOKEN: "test-token",
+        VENICE_SMOKE_TEST: "1",
+        VENICE_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const sidecar = files.find((f) => f.endsWith(".json"));
+    assert(sidecar, "Expected venice sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    // 2:3 scaled into the 1280 box, floored to the divisor-16 grid.
+    assert.equal(metadata.width, 848);
+    assert.equal(metadata.height, 1280);
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("venice --prompt reads an existing file as the prompt", () => {
+  const promptDir = fs.mkdtempSync(path.join(os.tmpdir(), "venice-prompt-file-"));
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "venice-prompt-file-out-"));
+  try {
+    const promptFile = path.join(promptDir, "my-prompt.txt");
+    fs.writeFileSync(promptFile, "prompt loaded from file");
+
+    runCli(
+      ["venice/index.js", "--prompt", promptFile],
+      {
+        VENICE_API_TOKEN: "test-token",
+        VENICE_SMOKE_TEST: "1",
+        VENICE_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const sidecar = files.find((f) => f.endsWith(".json"));
+    assert(sidecar, "Expected venice sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    assert.equal(metadata.prompt, "prompt loaded from file");
+  } finally {
+    removeDir(promptDir);
+    removeDir(outputDir);
+  }
+});
+
 test("wave-replay reconstructs imagine command from xai sidecar", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-replay-xai-"));
   try {
@@ -639,7 +718,7 @@ test("wave-replay reconstructs imagine command from xai sidecar", () => {
     assert.match(out, /--model grok-imagine-image-quality/);
     assert.match(out, /--prompt 'a glossy portrait'/);
     assert.match(out, /--n 1/, "Replay should reproduce ONE image, not the original --n 3");
-    assert.match(out, /--aspect-ratio 1:2/);
+    assert.match(out, /--format 1:2/);
     assert.match(out, /--resolution 1k/);
   } finally {
     removeDir(tmpDir);

@@ -30,12 +30,11 @@ export function setupVideoCLI() {
   program
     .version("1.0.0")
     .description("Generate videos via the Venice.ai /video/queue API.")
-    .option("--prompt <text>", "Text prompt for video generation.")
-    .option("--file <path>", "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)")
+    .option("--prompt <text|file|dir>", "Prompt text, a file to read it from, or a directory of .txt prompts (default: ./prompt.txt).")
     .option("--model <modelKey>", "Video model alias or Venice model id.", DEFAULT_VIDEO_MODEL)
     .option("--duration <duration>", 'Clip length (e.g. "5s", "10s", "15s").', "5s")
     .option("--resolution <res>", "Output resolution (720p or 1080p).", "720p")
-    .option("--aspect-ratio <ratio>", "Aspect ratio (16:9, 9:16, 1:1).", "16:9")
+    .option("--format <format>", "Aspect ratio (16:9, 9:16, 1:1) or named (square, wide, tall).", "16:9")
     .option("--negative-prompt <text>", "Negative prompt.")
     .option("--seed <number>", "Random seed.", parseInt)
     .option("--image-url <url>", "Input image URL (for image-to-video).")
@@ -59,6 +58,7 @@ ${rows}
 
 Examples:
   venice-video --prompt "a neon-lit alley at night" --duration 10s --resolution 1080p
+  venice-video --prompt "vertical dance clip" --format 9:16
   venice-video --model wan-i2v --image-url https://example.com/still.jpg --prompt "camera pushes in"
   venice-video --model wan-r2v --reference-images https://ex.com/a.jpg https://ex.com/b.jpg --prompt "character walks"
   venice-video --model wan-edit --video-url https://example.com/in.mp4 --prompt "make it more cinematic"

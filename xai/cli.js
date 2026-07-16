@@ -16,12 +16,8 @@ export function setupCLI() {
             "Generates images via the direct x.ai images/generations endpoint (Grok Imagine)."
         )
         .option(
-            "--prompt <text>",
-            "Text prompt for image generation."
-        )
-        .option(
-            "--file <path>",
-            "Read prompt from a file, or process every .txt file inside a directory (default: ./prompt.txt)"
+            "--prompt <text|file|dir>",
+            "Prompt text, a file to read it from, or a directory of .txt prompts (default: ./prompt.txt)."
         )
         .option(
             "--model <id>",
@@ -35,8 +31,8 @@ export function setupCLI() {
             DEFAULT_N
         )
         .option(
-            "--aspect-ratio <ratio>",
-            "Aspect ratio (e.g. 1:1, 16:9, 1:2). Passed through to the API.",
+            "--format <format>",
+            "Aspect ratio ('1:1', '16:9', '1:2') or a named format (square, wide, …).",
             DEFAULT_ASPECT_RATIO
         )
         .option(
@@ -73,15 +69,15 @@ export function setupCLI() {
         .addHelpText("after", `
 Examples:
   imagine --prompt "A futuristic cityscape at dusk"
-  imagine --prompt "Portrait" --aspect-ratio 9:16 --resolution 2k
+  imagine --prompt "Portrait" --format 9:16 --resolution 2k
   imagine --prompt "Surprise me" --n 3
-  imagine --file prompts/ --n 1
+  imagine --prompt prompts/ --n 1
 
 Notes:
   - The 'XAI_API_KEY' environment variable must be set with your x.ai API key.
   - Images are saved to './images/xai/' (or $XAI_PATH) by default.
-  - Aspect ratio and resolution are passed through verbatim; the API decides what's valid.
-  - For the Wavespeed-proxied Grok 2 Image surface, use \`wavespeed --model grok-2-image\` instead.
+  - Ratio and resolution are passed to the API as-is; the API decides what's valid.
+  - For the Wavespeed-proxied Grok 2 Image surface, use \`wave --model grok-2-image\` instead.
         `);
 
     program.parse(process.argv);
