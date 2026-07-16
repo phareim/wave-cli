@@ -48,6 +48,7 @@ const MOCK_ITEMS = [
     outputs: ["https://example.com/mock-history-a.png"],
     created_at: "2026-07-15T10:00:00Z",
     executionTime: 2100,
+    input: { prompt: "mock history prompt", seed: 42, size: "1024*1024" },
   },
   {
     id: "bbbb2222bbbb2222bbbb2222bbbb2222",
@@ -207,8 +208,14 @@ const uploadHistory = async (items, options) => {
     ui.fileHeader(record.id, i + 1, completed.length);
 
     const modelInfo = getModelInfo(record.model);
+    // Best effort: history records don't document an echo of the original
+    // request, but pass through record.input when the API does return it so
+    // the prompt/seed/size survive into the metadata blob and aiwdm
+    // description. Prompt-less imports stay valid.
+    const input = record.input && typeof record.input === "object" ? record.input : {};
     ui.kv([
       ["model", `${modelInfo?.metadata?.display_name || record.model} ${ui.c.dim(`[${record.model}]`)}`],
+      ["prompt", input.prompt ? ui.truncate(input.prompt) : undefined],
       ["created", record.created_at],
       ["outputs", String(record.outputs.length)],
     ]);
@@ -254,6 +261,13 @@ const uploadHistory = async (items, options) => {
       model: record.model,
       model_display_name: modelInfo?.metadata?.display_name,
       category: modelInfo?.metadata?.category,
+      prompt: input.prompt,
+      negative_prompt: input.negative_prompt,
+      seed: input.seed,
+      size: input.size,
+      aspect_ratio: input.aspect_ratio,
+      resolution: input.resolution,
+      duration: input.duration,
       prediction_id: record.id,
       created_at: record.created_at,
       execution_time_ms: record.executionTime,
@@ -262,7 +276,7 @@ const uploadHistory = async (items, options) => {
     await publishOutputs(savedPaths, metadataBlob, {
       sourceTag: "wavespeed",
       modelTag: modelInfo?.metadata?.display_name || record.model,
-      prompt: undefined, // history records carry no prompt
+      prompt: input.prompt,
       options,
       smoke: SMOKE_MODE,
     });

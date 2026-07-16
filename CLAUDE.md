@@ -144,7 +144,7 @@ xai specifics: response is JSON with `b64_json` per image (decoded via mime-deri
 2. local filename match in the output dir;
 3. aiwdm's own upload-time dedup (filename+size, thumbnail hash) as the backstop.
 
-`--force` bypasses 1–2; `--dry-run` reports without acting; `--local` writes sidecars instead of uploading. History records carry no prompt, so imported blobs have `imported_via: "wave-history"`, `generated_at` = the prediction's `created_at`, and no `prompt` (replay of such sidecars is limited by design).
+`--force` bypasses 1–2; `--dry-run` reports without acting; `--local` writes sidecars instead of uploading. Imported blobs have `imported_via: "wave-history"` and `generated_at` = the prediction's `created_at`. The documented history response carries no `input` echo, but when the API does return `record.input`, its `prompt`/`negative_prompt`/`seed`/`size`/`aspect_ratio`/`resolution`/`duration` pass through into the blob and the aiwdm description (best effort); prompt-less imports stay valid but can't be fully replayed.
 
 ### API Response Handling
 

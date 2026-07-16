@@ -742,9 +742,12 @@ test("wave-history --upload downloads completed outputs with history sidecars", 
     assert.equal(imageMeta.imported_via, "wave-history");
     assert.equal(imageMeta.prediction_id, "aaaa1111aaaa1111aaaa1111aaaa1111");
     assert.equal(imageMeta.generated_at, "2026-07-15T10:00:00Z");
+    assert.equal(imageMeta.prompt, "mock history prompt", "record.input.prompt should pass through to the blob");
+    assert.equal(imageMeta.seed, 42, "record.input.seed should pass through to the blob");
 
     const videoMeta = JSON.parse(fs.readFileSync(path.join(outputDir, "bbbb2222bbbb2222bbbb2222bbbb2222.json"), "utf8"));
     assert.equal(videoMeta.kind, "video", "wan-2.5 text-to-video must be recorded as video");
+    assert.equal(videoMeta.prompt, undefined, "records without input stay prompt-less");
   } finally {
     removeDir(outputDir);
   }
