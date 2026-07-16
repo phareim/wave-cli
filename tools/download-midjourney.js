@@ -1,3 +1,6 @@
+// One-off Midjourney CDN scraper. selenium-webdriver and chromedriver are NOT
+// in package.json (dropped 2026-07-16 — they pulled in every vulnerability the
+// repo had). To run this again: npm i --no-save selenium-webdriver chromedriver
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { Builder, By } from 'selenium-webdriver';
