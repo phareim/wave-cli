@@ -30,6 +30,7 @@ Unified command-line tools for AI image and video generation: **Venice.ai**, **W
 | `imagine` | Direct x.ai images/generations (Grok Imagine) |
 | `wave-replay` | Reconstruct or re-run the command that produced a metadata sidecar |
 | `wave-balance` | Show current Venice + Wavespeed account balances |
+| `wave-history` | Browse Wavespeed prediction history (~7 days); `--upload` publishes completed outputs to aiwdm with a duplicate check |
 
 ## Environment variables
 

@@ -59,7 +59,7 @@ wavespeed/  index.js, cli.js, config.js, models.js (hardcoded modelEndpoints + a
             constrainDimensions), parameter-builders.js (category-based request params),
             response-handlers.js (download outputs via lib/media.fetchOutputs)
 xai/        index.js, cli.js, config.js — direct x.ai images/generations ("imagine")
-tools/      replay.js (wave-replay), balance.js (wave-balance)
+tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history)
 ```
 
 ### CLI Entry Points (package.json bin)
@@ -72,6 +72,7 @@ tools/      replay.js (wave-replay), balance.js (wave-balance)
 - `imagine` → `xai/index.js` (direct api.x.ai; distinct from `wave --model grok-2-image`, the Wavespeed-proxied path)
 - `wave-replay` → `tools/replay.js`
 - `wave-balance` → `tools/balance.js`
+- `wave-history` → `tools/history.js`
 
 ### Output language (lib/ui.js)
 
@@ -134,6 +135,16 @@ xai specifics: response is JSON with `b64_json` per image (decoded via mime-deri
 ### wave-replay
 
 `wave-replay <sidecar-or-media>` reconstructs the original CLI invocation from a metadata blob, dispatching on `source`. When adding a generator or new metadata fields, extend `tools/replay.js` so the round-trip stays complete — the smoke tests cover venice, wavespeed, and xai reconstruction plus `--exec` re-runs. Wavespeed blobs with `original_prompt` replay the post-optimization `prompt` (the optimizer is non-deterministic).
+
+### wave-history
+
+`wave-history` browses the Wavespeed predictions history API (`POST /api/v3/predictions`, paged; covers ~7 days of API + web-UI generations; output URLs are temporary). Filters: `--model`, `--status`, `--since`/`--before` (RFC 3339 or `90m/24h/3d`), `--limit`, `--json`. `--upload` downloads completed outputs (named `<prediction_id>.<ext>` like `wave` does) and publishes them via `lib/aiwdm.publishOutputs` with a **best-effort duplicate check**, layered:
+
+1. aiwdm filename match — fetches the aiwdm media list (`API_URL` from `AIWDM_API_URL` or the aiwdm CLI dir's `.env`) and skips predictions whose id appears as a filename stem (works because both `wave` and `wave-history` name downloads by prediction id and aiwdm preserves filenames);
+2. local filename match in the output dir;
+3. aiwdm's own upload-time dedup (filename+size, thumbnail hash) as the backstop.
+
+`--force` bypasses 1–2; `--dry-run` reports without acting; `--local` writes sidecars instead of uploading. History records carry no prompt, so imported blobs have `imported_via: "wave-history"`, `generated_at` = the prediction's `created_at`, and no `prompt` (replay of such sidecars is limited by design).
 
 ### API Response Handling
 

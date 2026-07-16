@@ -11,6 +11,7 @@
     "imagine": "./xai/index.js",
     "wave-replay": "./tools/replay.js",
     "wave-balance": "./tools/balance.js",
+    "wave-history": "./tools/history.js",
     "wan2.6-flash": "./venice/wan26-flash.js"
   },
   "type": "module",

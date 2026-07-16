@@ -695,6 +695,91 @@ test("venice --prompt reads an existing file as the prompt", () => {
   }
 });
 
+test("wave-history lists mocked predictions", () => {
+  const result = runCli(
+    ["tools/history.js"],
+    { WAVESPEED_KEY: "test-key", WAVESPEED_SMOKE_TEST: "1", NODE_ENV: "test" }
+  );
+  assert.match(result.stdout, /wave-history · 3 predictions/);
+  assert.match(result.stdout, /bytedance\/seedream-v4/);
+  assert.match(result.stdout, /wan-2\.5\/text-to-video/);
+  assert.match(result.stdout, /failed/);
+  assert.match(result.stdout, /aaaa1111aaaa1111aaaa1111aaaa1111/);
+});
+
+test("wave-history --json emits raw records", () => {
+  const result = runCli(
+    ["tools/history.js", "--json"],
+    { WAVESPEED_KEY: "test-key", WAVESPEED_SMOKE_TEST: "1", NODE_ENV: "test" }
+  );
+  const items = JSON.parse(result.stdout);
+  assert.equal(items.length, 3);
+  assert.equal(items[0].id, "aaaa1111aaaa1111aaaa1111aaaa1111");
+  assert.equal(items[2].status, "failed");
+});
+
+test("wave-history --upload downloads completed outputs with history sidecars", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-history-upload-"));
+  try {
+    runCli(
+      ["tools/history.js", "--upload"],
+      {
+        WAVESPEED_KEY: "test-key",
+        WAVESPEED_SMOKE_TEST: "1",
+        WAVESPEED_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    assert(files.includes("aaaa1111aaaa1111aaaa1111aaaa1111.png"), "Expected image output named by prediction id");
+    assert(files.includes("bbbb2222bbbb2222bbbb2222bbbb2222.mp4"), "Expected video output named by prediction id");
+    assert(!files.some((f) => f.startsWith("cccc3333")), "Failed prediction must not produce files");
+
+    const imageMeta = JSON.parse(fs.readFileSync(path.join(outputDir, "aaaa1111aaaa1111aaaa1111aaaa1111.json"), "utf8"));
+    assert.equal(imageMeta.source, "wavespeed");
+    assert.equal(imageMeta.kind, "image");
+    assert.equal(imageMeta.imported_via, "wave-history");
+    assert.equal(imageMeta.prediction_id, "aaaa1111aaaa1111aaaa1111aaaa1111");
+    assert.equal(imageMeta.generated_at, "2026-07-15T10:00:00Z");
+
+    const videoMeta = JSON.parse(fs.readFileSync(path.join(outputDir, "bbbb2222bbbb2222bbbb2222bbbb2222.json"), "utf8"));
+    assert.equal(videoMeta.kind, "video", "wan-2.5 text-to-video must be recorded as video");
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("wave-history --upload skips predictions already downloaded locally", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-history-dedup-"));
+  try {
+    fs.writeFileSync(path.join(outputDir, "aaaa1111aaaa1111aaaa1111aaaa1111.png"), "pre-existing");
+
+    const result = runCli(
+      ["tools/history.js", "--upload"],
+      {
+        WAVESPEED_KEY: "test-key",
+        WAVESPEED_SMOKE_TEST: "1",
+        WAVESPEED_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    assert.match(result.stdout, /already downloaded locally/);
+    assert.match(result.stdout, /1 skipped as duplicates/);
+    const files = fs.readdirSync(outputDir);
+    assert(!files.includes("aaaa1111aaaa1111aaaa1111aaaa1111.json"), "Skipped prediction must not get a sidecar");
+    assert(files.includes("bbbb2222bbbb2222bbbb2222bbbb2222.mp4"), "Non-duplicate prediction should still be processed");
+    assert.equal(
+      fs.readFileSync(path.join(outputDir, "aaaa1111aaaa1111aaaa1111aaaa1111.png"), "utf8"),
+      "pre-existing",
+      "Pre-existing file must not be overwritten"
+    );
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
 test("wave-replay reconstructs imagine command from xai sidecar", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "wave-replay-xai-"));
   try {
