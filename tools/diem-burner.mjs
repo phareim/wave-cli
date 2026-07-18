@@ -25,10 +25,12 @@ const VENICE_BIN = path.join(HOME, ".npm-global/bin/venice");
 const RATE_LIMITS_URL = "https://api.venice.ai/api/v1/api_keys/rate_limits";
 const MODELS_URL = "https://api.venice.ai/api/v1/models?type=image";
 
-// Seedream-heavy mix: gpt-image-2 at most once per run, and only when the
-// leftover budget comfortably covers its ~0.27 DIEM 1K price.
+// Seedream-heavy mix; gpt-image-2 runs at LOW quality (0.02 DIEM at 1K vs
+// 0.26 at its default high) and soaks up the budget tail seedream (0.06)
+// can no longer afford.
 const SEEDREAM = "seedream-v5-pro";
 const GPT_IMAGE = "gpt-image-2";
+const GPT_QUALITY = "low";
 // Aspect ratios to pull a random format from per image. Configurable via
 // DIEM_BURNER_FORMATS in the env file (comma-separated, e.g. "2:3,3:2").
 // Both target models are resolution-tier priced and IGNORE width/height —
@@ -39,7 +41,6 @@ const RESOLUTION = "1K";
 
 // Resolved in main() after the env file is loaded.
 let FORMATS = DEFAULT_FORMATS;
-const GPT_THRESHOLD = 0.35;
 const WINDOW_MINUTES = 100; // only run this close to the DIEM epoch
 const CUTOFF_MINUTES = 5;   // stop starting new generations this close to it
 const DEFAULT_MAX_IMAGES = 12;
@@ -85,10 +86,16 @@ async function fetchBalance() {
   return { diem, nextEpoch: new Date(nextEpoch) };
 }
 
-// DIEM price of one generation at default settings (1K where tiered).
+// DIEM price of one generation at the settings we send (1K where tiered,
+// low quality where quality-priced — i.e. gpt-image-2).
 function modelCost(spec) {
   const pricing = spec?.model_spec?.pricing;
-  return pricing?.generation?.diem ?? pricing?.resolutions?.["1K"]?.diem ?? null;
+  return (
+    pricing?.quality?.["1K"]?.[GPT_QUALITY]?.diem ??
+    pricing?.generation?.diem ??
+    pricing?.resolutions?.["1K"]?.diem ??
+    null
+  );
 }
 
 async function fetchModelCosts() {
@@ -135,7 +142,9 @@ async function promptPool() {
 
 function runVenice(promptFile, model, format) {
   return new Promise((resolve) => {
-    const child = spawn(VENICE_BIN, ["--prompt", promptFile, "--model", model, "--format", format, "--resolution", RESOLUTION, "--aiwdm-tags", "diem-burner"], {
+    const cliArgs = ["--prompt", promptFile, "--model", model, "--format", format, "--resolution", RESOLUTION, "--aiwdm-tags", "diem-burner"];
+    if (model === GPT_IMAGE) cliArgs.push("--quality", GPT_QUALITY);
+    const child = spawn(VENICE_BIN, cliArgs, {
       stdio: "inherit",
       env: {
         ...process.env,
@@ -182,7 +191,7 @@ async function main() {
   const costs = await fetchModelCosts();
   const seedreamCost = costs[SEEDREAM];
   const gptCost = costs[GPT_IMAGE];
-  log(`live pricing · ${SEEDREAM} ${seedreamCost} DIEM · ${GPT_IMAGE} ~${gptCost} DIEM (1K)`);
+  log(`live pricing · ${SEEDREAM} ${seedreamCost} DIEM (1K) · ${GPT_IMAGE} ~${gptCost} DIEM (1K ${GPT_QUALITY})`);
 
   const pool = await promptPool();
   if (pool.length === 0) {
@@ -193,13 +202,13 @@ async function main() {
 
   let budget = diem;
   let images = 0;
-  let gptUsed = false;
   let consecutiveFailures = 0;
   let poolIdx = 0;
+  const minCost = Math.min(seedreamCost, gptCost);
 
   while (images < MAX_IMAGES) {
-    if (budget < seedreamCost) {
-      log(`budget ${budget.toFixed(4)} below ${SEEDREAM} cost ${seedreamCost} — done`);
+    if (budget < minCost) {
+      log(`budget ${budget.toFixed(4)} below the cheapest image (${minCost}) — done`);
       break;
     }
     if (minutesUntil(nextEpoch) < CUTOFF_MINUTES) {
@@ -207,7 +216,9 @@ async function main() {
       break;
     }
 
-    const model = !gptUsed && budget >= GPT_THRESHOLD ? GPT_IMAGE : SEEDREAM;
+    // Seedream while the budget covers it; gpt-image-2 at low quality soaks
+    // up the tail below one seedream image.
+    const model = budget >= seedreamCost ? SEEDREAM : GPT_IMAGE;
     const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
     const promptFile = pool[poolIdx % pool.length];
     poolIdx++;
@@ -215,17 +226,14 @@ async function main() {
     if (DRY_RUN) {
       log(`dry-run: would generate ${model} ${format} from ${path.basename(promptFile)} (est. ${costs[model]} DIEM, budget ${budget.toFixed(4)})`);
       budget -= costs[model];
-      if (model === GPT_IMAGE) gptUsed = true;
       images++;
       continue;
     }
 
     log(`image ${images + 1}/${MAX_IMAGES} · ${model} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
     const exitCode = await runVenice(promptFile, model, format);
-    if (model === GPT_IMAGE) gptUsed = true;
 
-    // The real charge (gpt-image quality tiers vary) comes from re-reading
-    // the balance, not from the estimate.
+    // The real charge comes from re-reading the balance, not from the estimate.
     let after = budget - costs[model];
     try {
       after = (await fetchBalance()).diem;
