@@ -100,11 +100,27 @@ async function fetchModelCosts() {
   return costs;
 }
 
+// Directories that never hold usable prompts: the archive, the output dump,
+// the shorts, and repo plumbing.
+const EXCLUDED_DIRS = new Set(["old", "short", "images", "node_modules"]);
+
+async function collectPromptFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const e of entries) {
+    if (e.name.startsWith(".")) continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      if (!EXCLUDED_DIRS.has(e.name)) files.push(...(await collectPromptFiles(full)));
+    } else if (e.isFile() && e.name.endsWith(".txt")) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
 async function promptPool() {
-  const entries = await readdir(PROMPTS_DIR, { withFileTypes: true });
-  const files = entries
-    .filter((e) => e.isFile() && e.name.endsWith(".txt"))
-    .map((e) => path.join(PROMPTS_DIR, e.name));
+  const files = await collectPromptFiles(PROMPTS_DIR);
   // Fisher–Yates; no repeats within a run until the pool is exhausted.
   for (let i = files.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
