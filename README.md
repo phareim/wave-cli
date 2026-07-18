@@ -94,6 +94,13 @@ venice --prompt "test" --format 1024x768                     # pixels, clamped t
 venice-video --prompt "vertical clip" --format 9:16
 ```
 
+**Resolution-tier Venice models** (`seedream-v5-pro`, `gpt-image-2`, `nano-banana-*`) ignore width/height entirely: they take `aspect_ratio` + `resolution` and **bill by tier**. `venice` translates `--format` to the aspect ratio and adds `--resolution <1K|2K|4K>` / `--quality <low|medium|high>` (gpt-image-2 only). Omit `--resolution` and the model's *default* tier is billed — seedream-v5-pro defaults to 2K (0.11 DIEM) even for small requests, so pass `--resolution 1K` (0.06) when that's what you mean:
+
+```bash
+venice --model seedream-v5-pro --prompt "…" --format 2:3 --resolution 1K
+venice --model gpt-image-2 --prompt "…" --format 3:2 --resolution 1K --quality medium
+```
+
 ### Prompt optimization (wave only)
 
 `--optimize` runs the prompt through Wavespeed's prompt optimizer before generation. The mode (image/video) is derived from the model automatically; pick a flavor with `--optimize-style <default|artistic|photographic|technical|realistic|random>`.
@@ -132,8 +139,8 @@ Wavespeed sidecars produced with `--optimize` replay the *post-optimization* pro
 Venice's daily DIEM allowance expires at 00:00 UTC. `tools/diem-burner.mjs` runs shortly before that (systemd user timer `diem-burner.timer`, 23:10 UTC) and spends whatever is left on artwork:
 
 - Checks the live balance via `GET /api_keys/rate_limits`; unless `--force`, it exits quietly when more than 100 minutes remain before the epoch — so a stray manual/boot-time run can't burn the *new* day's budget.
-- Picks random prompts from top-level `~/prompts/*.txt` (no repeats within a run) and shells out to `venice --prompt <file> --model <id> --aiwdm-tags diem-burner`, so every image auto-uploads to aiwdm tagged `venice, <model>, diem-burner`.
-- Model mix: `seedream-v5-pro` by default; one `gpt-image-2` per run when the budget is ≥ 0.35 DIEM. Pricing is read live from `/models?type=image`, and the *actual* charge is taken from a balance re-read after each generation (tiered models can bill above the 1K estimate — seedream-v5-pro at 1024×1024 has been observed billing the 2K rate of 0.11).
+- Picks random prompts from top-level `~/prompts/*.txt` (no repeats within a run) and shells out to `venice --prompt <file> --model <id> --format <2:3|3:2> --resolution 1K --aiwdm-tags diem-burner`, so every image auto-uploads to aiwdm tagged `venice, <model>, diem-burner`. Format is randomized per image between portrait 2:3 and landscape 3:2; `--resolution 1K` is pinned because tier-priced models otherwise bill their *default* tier (seedream-v5-pro defaults to 2K: 0.11 instead of 0.06 — verified empirically).
+- Model mix: `seedream-v5-pro` by default; one `gpt-image-2` per run when the budget is ≥ 0.35 DIEM. Pricing is read live from `/models?type=image`, and the *actual* charge is taken from a balance re-read after each generation.
 - Stops when the budget drops below one seedream image, at 12 images, within 5 minutes of the epoch, or after two consecutive `venice` failures.
 
 Flags: `--dry-run` (plan only), `--force` (ignore the window guard), `--max-images N`. Secrets: `VENICE_API_TOKEN` in `~/.config/diem-burner/env` (loaded by the script; never overrides the ambient env). Log: one JSON line per image in `~/.local/share/diem-burner.jsonl`. Killswitch: `systemctl --user disable --now diem-burner.timer`.

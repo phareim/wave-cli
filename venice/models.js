@@ -40,6 +40,14 @@ try {
         maxSteps: constraints.steps?.max || 50,
         defaultSteps: constraints.steps?.default || 20,
         promptCharacterLimit: constraints.promptCharacterLimit || 1500,
+        // Resolution-tier models (seedream-v5-pro, gpt-image-2, nano-banana-*)
+        // take aspect_ratio + resolution instead of width/height — and bill by
+        // tier, defaulting to defaultResolution when none is sent.
+        resolutions: constraints.resolutions || null,
+        defaultResolution: constraints.defaultResolution || null,
+        aspectRatios: constraints.aspectRatios || null,
+        qualities: constraints.qualities || null,
+        defaultQuality: constraints.defaultQuality || null,
       };
     }
 

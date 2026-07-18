@@ -29,6 +29,12 @@ const MODELS_URL = "https://api.venice.ai/api/v1/models?type=image";
 // leftover budget comfortably covers its ~0.27 DIEM 1K price.
 const SEEDREAM = "seedream-v5-pro";
 const GPT_IMAGE = "gpt-image-2";
+// Portrait/landscape mix (Petter prefers 2:3 / 3:2 over squares). Both target
+// models are resolution-tier priced and IGNORE width/height — without an
+// explicit `--resolution 1K` seedream-v5-pro bills its 2K default (0.11
+// observed vs 0.06 at 1K), so the tier is always pinned.
+const FORMATS = ["2:3", "3:2"];
+const RESOLUTION = "1K";
 const GPT_THRESHOLD = 0.35;
 const WINDOW_MINUTES = 100; // only run this close to the DIEM epoch
 const CUTOFF_MINUTES = 5;   // stop starting new generations this close to it
@@ -107,9 +113,9 @@ async function promptPool() {
   return files;
 }
 
-function runVenice(promptFile, model) {
+function runVenice(promptFile, model, format) {
   return new Promise((resolve) => {
-    const child = spawn(VENICE_BIN, ["--prompt", promptFile, "--model", model, "--aiwdm-tags", "diem-burner"], {
+    const child = spawn(VENICE_BIN, ["--prompt", promptFile, "--model", model, "--format", format, "--resolution", RESOLUTION, "--aiwdm-tags", "diem-burner"], {
       stdio: "inherit",
       env: {
         ...process.env,
@@ -176,19 +182,20 @@ async function main() {
     }
 
     const model = !gptUsed && budget >= GPT_THRESHOLD ? GPT_IMAGE : SEEDREAM;
+    const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
     const promptFile = pool[poolIdx % pool.length];
     poolIdx++;
 
     if (DRY_RUN) {
-      log(`dry-run: would generate ${model} from ${path.basename(promptFile)} (est. ${costs[model]} DIEM, budget ${budget.toFixed(4)})`);
+      log(`dry-run: would generate ${model} ${format} from ${path.basename(promptFile)} (est. ${costs[model]} DIEM, budget ${budget.toFixed(4)})`);
       budget -= costs[model];
       if (model === GPT_IMAGE) gptUsed = true;
       images++;
       continue;
     }
 
-    log(`image ${images + 1}/${MAX_IMAGES} · ${model} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
-    const exitCode = await runVenice(promptFile, model);
+    log(`image ${images + 1}/${MAX_IMAGES} · ${model} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
+    const exitCode = await runVenice(promptFile, model, format);
     if (model === GPT_IMAGE) gptUsed = true;
 
     // The real charge (gpt-image quality tiers vary) comes from re-reading
@@ -204,6 +211,7 @@ async function main() {
       ts: new Date().toISOString(),
       prompt_file: promptFile,
       model,
+      format,
       diem_before: Number(budget.toFixed(4)),
       diem_after: Number(after.toFixed(4)),
       exit_code: exitCode,

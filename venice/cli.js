@@ -26,6 +26,8 @@ export function setupCLI() {
     .option("--negative-prompt <text>", "Negative prompt to guide what not to generate.")
     .option("--model <modelKey>", "AI model to use.", defaultModel)
     .option("--format <format>", "Image size: named (square, portrait, landscape, wide, tall), ratio ('2:3'), or pixels ('1024x1280'). Default 1024x1024.")
+    .option("--resolution <tier>", "Resolution tier (1K, 2K, 4K) for tier-priced models (seedream-v5-pro, gpt-image-2, nano-banana-*). Omit for the model default — note the default can be the pricier tier.")
+    .option("--quality <quality>", "Generation quality (low, medium, high); gpt-image-2 only. Higher tiers bill more.")
     .option("--steps <number>", "Number of inference steps (default: the model's own default)", parseFloat)
     .option("--cfg-scale <number>", "Classifier-free guidance scale", parseFloat, DEFAULT_CFG_SCALE)
     .option("--seed <number>", "Random seed for reproducibility", parseFloat)

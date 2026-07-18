@@ -18,7 +18,7 @@ import * as ui from "../lib/ui.js";
 import { saveMedia } from "../lib/media.js";
 import { publishOutputs } from "../lib/aiwdm.js";
 import { resolvePrompt, runPromptBatch } from "../lib/prompts.js";
-import { parseFormat, fitRatioToBox } from "../lib/format.js";
+import { parseFormat, fitRatioToBox, reduceRatio, NAMED_RATIOS } from "../lib/format.js";
 
 const VENICE_API_URL = "https://api.venice.ai/api/v1/image/generate";
 const SMOKE_MODE = process.env.VENICE_SMOKE_TEST === "1";
@@ -66,8 +66,83 @@ const resolveDimensions = (format) => {
     return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
 };
 
+// --format → aspect-ratio string for resolution-tier models.
+const resolveAspectRatio = (format) => {
+    const f = parseFormat(format);
+    if (!f) return null;
+    if (f.type === "ratio") return f.ratio;
+    if (f.type === "pixels") return reduceRatio(f.width, f.height);
+    const named = image_size[f.name];
+    if (named) return reduceRatio(named.width, named.height);
+    return NAMED_RATIOS[f.name] || null;
+};
+
+// Resolution-tier models (seedream-v5-pro, gpt-image-2, nano-banana-*) ignore
+// width/height: they take aspect_ratio + resolution and BILL by tier, falling
+// back to the model's defaultResolution (2K for seedream-v5-pro) when no
+// resolution is sent — that's how a "1K-priced" request can charge the 2K rate.
+const buildAspectInput = (options, constraints) => {
+    const sizing = {};
+
+    const ratio = resolveAspectRatio(options.format);
+    if (ratio) {
+        if (constraints.aspectRatios && !constraints.aspectRatios.includes(ratio)) {
+            ui.warn(`Aspect ratio '${ratio}' not supported by this model (valid: ${constraints.aspectRatios.join(", ")}). Using the model default.`);
+        } else {
+            sizing.aspect_ratio = ratio;
+        }
+    }
+
+    if (options.resolution) {
+        const tier = options.resolution.toUpperCase();
+        if (constraints.resolutions.includes(tier)) {
+            sizing.resolution = tier;
+        } else {
+            ui.warn(`Resolution '${options.resolution}' not supported (valid: ${constraints.resolutions.join(", ")}). Using the model default${constraints.defaultResolution ? ` (${constraints.defaultResolution})` : ""}.`);
+        }
+    }
+
+    if (options.quality) {
+        const q = options.quality.toLowerCase();
+        if (constraints.qualities?.includes(q)) {
+            sizing.quality = q;
+        } else {
+            ui.warn(`Quality '${options.quality}' not supported by this model${constraints.qualities ? ` (valid: ${constraints.qualities.join(", ")})` : ""}. Ignoring.`);
+        }
+    }
+
+    return sizing;
+};
+
 const buildInput = (options) => {
     const constraints = getModelConstraints(options.model);
+
+    if (constraints.resolutions) {
+        const sizing = buildAspectInput(options, constraints);
+        const requestedSteps = parseInt(options.steps) || constraints.defaultSteps || DEFAULT_STEPS;
+        if (options.steps && requestedSteps > constraints.maxSteps) {
+            ui.warn(`Steps capped at ${constraints.maxSteps} (maximum for this model)`);
+        }
+        const input = {
+            model: getModelEndpoint(options.model),
+            prompt: options.prompt,
+            ...sizing,
+            steps: Math.min(requestedSteps, constraints.maxSteps),
+            cfg_scale: parseFloat(options.cfgScale) || DEFAULT_CFG_SCALE,
+            hide_watermark: true,
+            return_binary: true,
+            safe_mode: false,
+            seed: options.seed !== undefined ? parseInt(options.seed) : randomSeed(),
+        };
+        if (options.negativePrompt) input.negative_prompt = options.negativePrompt;
+        if (options.outputFormat) input.format = options.outputFormat;
+        return input;
+    }
+
+    if (options.resolution || options.quality) {
+        ui.warn("--resolution/--quality only apply to resolution-tier models (seedream-v5-pro, gpt-image-2, nano-banana-*). Ignoring.");
+    }
+
     const divisor = constraints.widthHeightDivisor;
 
     const requested = resolveDimensions(options.format);
@@ -122,11 +197,15 @@ const run = async (options) => {
 
     if (DEBUG) console.log("Input parameters:", JSON.stringify(input, null, 2));
 
+    const sizeLabel = input.width
+        ? `${input.width}×${input.height}`
+        : [input.aspect_ratio, input.resolution, input.quality].filter(Boolean).join(" · ") || "model default";
+
     ui.banner("venice", "image");
     ui.kv([
         ["prompt", ui.truncate(input.prompt)],
         ["model", input.model],
-        ["size", `${input.width}×${input.height}`],
+        ["size", sizeLabel],
         ["steps", `${input.steps} · cfg ${input.cfg_scale}`],
         ["lora", input.style_preset],
         ["seed", `${input.seed}${seedProvidedByUser ? "" : ui.c.dim(" · auto")}`],
@@ -173,6 +252,9 @@ const run = async (options) => {
             negative_prompt: input.negative_prompt,
             width: input.width,
             height: input.height,
+            aspect_ratio: input.aspect_ratio,
+            resolution: input.resolution,
+            quality: input.quality,
             steps: input.steps,
             cfg_scale: input.cfg_scale,
             seed: input.seed,
@@ -193,7 +275,7 @@ const run = async (options) => {
 
         ui.footer([
             `seed ${input.seed}`,
-            `${input.width}×${input.height}`,
+            sizeLabel,
             ui.fmtDuration(generationTimeMs),
         ]);
     } catch (error) {

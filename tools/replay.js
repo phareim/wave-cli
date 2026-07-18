@@ -48,6 +48,9 @@ const buildVeniceArgs = (m) => {
   push(args, "--prompt", m.prompt);
   push(args, "--negative-prompt", m.negative_prompt);
   if (m.width && m.height) push(args, "--format", `${m.width}x${m.height}`);
+  else push(args, "--format", m.aspect_ratio);
+  push(args, "--resolution", m.resolution);
+  push(args, "--quality", m.quality);
   push(args, "--steps", m.steps);
   push(args, "--cfg-scale", m.cfg_scale);
   push(args, "--seed", m.seed);
