@@ -29,12 +29,16 @@ const MODELS_URL = "https://api.venice.ai/api/v1/models?type=image";
 // leftover budget comfortably covers its ~0.27 DIEM 1K price.
 const SEEDREAM = "seedream-v5-pro";
 const GPT_IMAGE = "gpt-image-2";
-// Portrait/landscape mix (Petter prefers 2:3 / 3:2 over squares). Both target
-// models are resolution-tier priced and IGNORE width/height — without an
-// explicit `--resolution 1K` seedream-v5-pro bills its 2K default (0.11
-// observed vs 0.06 at 1K), so the tier is always pinned.
-const FORMATS = ["2:3", "3:2"];
+// Aspect ratios to pull a random format from per image. Configurable via
+// DIEM_BURNER_FORMATS in the env file (comma-separated, e.g. "2:3,3:2").
+// Both target models are resolution-tier priced and IGNORE width/height —
+// without an explicit `--resolution 1K` seedream-v5-pro bills its 2K default
+// (0.11 observed vs 0.06 at 1K), so the tier is always pinned.
+const DEFAULT_FORMATS = ["9:16"];
 const RESOLUTION = "1K";
+
+// Resolved in main() after the env file is loaded.
+let FORMATS = DEFAULT_FORMATS;
 const GPT_THRESHOLD = 0.35;
 const WINDOW_MINUTES = 100; // only run this close to the DIEM epoch
 const CUTOFF_MINUTES = 5;   // stop starting new generations this close to it
@@ -159,6 +163,12 @@ async function main() {
     console.error(`[diem-burner] VENICE_API_TOKEN is not set (checked env and ${ENV_FILE})`);
     process.exit(1);
   }
+
+  if (process.env.DIEM_BURNER_FORMATS) {
+    const parsed = process.env.DIEM_BURNER_FORMATS.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parsed.length > 0) FORMATS = parsed;
+  }
+  log(`formats: ${FORMATS.join(", ")} · resolution ${RESOLUTION}`);
 
   const { diem, nextEpoch } = await fetchBalance();
   const untilEpoch = minutesUntil(nextEpoch);
