@@ -59,7 +59,9 @@ wavespeed/  index.js, cli.js, config.js, models.js (hardcoded modelEndpoints + a
             constrainDimensions), parameter-builders.js (category-based request params),
             response-handlers.js (download outputs via lib/media.fetchOutputs)
 xai/        index.js, cli.js, config.js — direct x.ai images/generations ("imagine")
-tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history)
+tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history),
+            diem-burner.mjs (nightly leftover-DIEM spender; no bin entry — run by the
+            diem-burner.timer systemd user unit, see README "DIEM burner")
 ```
 
 ### CLI Entry Points (package.json bin)

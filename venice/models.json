@@ -29,6 +29,8 @@
           "widthHeightDivisor": 16
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Venice SD35",
         "modelSource": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
         "offline": false,
@@ -42,13 +44,19 @@
       "type": "image"
     },
     {
-      "created": 1747080729,
-      "id": "hidream",
+      "created": 1778112000,
+      "id": "grok-imagine-image-quality",
       "model_spec": {
         "pricing": {
-          "generation": {
-            "usd": 0.01,
-            "diem": 0.01
+          "resolutions": {
+            "1K": {
+              "usd": 0.06,
+              "diem": 0.06
+            },
+            "2K": {
+              "usd": 0.09,
+              "diem": 0.09
+            }
           },
           "upscale": {
             "2x": {
@@ -61,20 +69,101 @@
             }
           }
         },
+        "model_sets": [
+          "venice_recommendations",
+          "featured"
+        ],
         "constraints": {
-          "promptCharacterLimit": 1500,
+          "promptCharacterLimit": 7500,
+          "defaultResolution": "1K",
+          "resolutions": [
+            "1K",
+            "2K"
+          ],
+          "aspectRatios": [
+            "1:1",
+            "16:9",
+            "9:16",
+            "3:4",
+            "3:2",
+            "2:3"
+          ],
+          "defaultAspectRatio": "1:1",
           "steps": {
             "default": 20,
             "max": 50
           },
-          "widthHeightDivisor": 8
+          "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
-        "deprecation": {
-          "date": "2026-05-01T00:00:00.000Z"
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
+        "name": "Grok Imagine High Quality (SOTA)",
+        "offline": false,
+        "privacy": "private",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1782777600,
+      "id": "krea-2-turbo",
+      "model_spec": {
+        "pricing": {
+          "resolutions": {
+            "1K": {
+              "usd": 0.04,
+              "diem": 0.04
+            },
+            "2K": {
+              "usd": 0.06,
+              "diem": 0.06
+            }
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
         },
-        "name": "HiDream",
-        "modelSource": "https://huggingface.co/HiDream-ai/HiDream-I1-Dev",
+        "model_sets": [
+          "venice_recommendations"
+        ],
+        "constraints": {
+          "promptCharacterLimit": 5000,
+          "defaultResolution": "1K",
+          "resolutions": [
+            "1K",
+            "2K"
+          ],
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "21:9",
+            "9:16",
+            "2:3",
+            "3:4",
+            "4:5"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
+        "name": "Krea 2 Turbo",
         "offline": false,
         "privacy": "private",
         "traits": []
@@ -89,8 +178,8 @@
       "model_spec": {
         "pricing": {
           "generation": {
-            "usd": 0.04,
-            "diem": 0.04
+            "usd": 0.03,
+            "diem": 0.03
           },
           "upscale": {
             "2x": {
@@ -123,6 +212,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Flux 2 Pro",
         "offline": false,
         "privacy": "anonymized",
@@ -176,6 +267,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Flux 2 Max",
         "offline": false,
         "privacy": "anonymized",
@@ -192,16 +285,60 @@
         "pricing": {
           "resolutions": {
             "1K": {
-              "usd": 0.26,
-              "diem": 0.26
+              "usd": 0.27,
+              "diem": 0.27
             },
             "2K": {
-              "usd": 0.5,
-              "diem": 0.5
+              "usd": 0.51,
+              "diem": 0.51
             },
             "4K": {
-              "usd": 0.83,
-              "diem": 0.83
+              "usd": 0.84,
+              "diem": 0.84
+            }
+          },
+          "quality": {
+            "1K": {
+              "high": {
+                "usd": 0.26,
+                "diem": 0.26
+              },
+              "low": {
+                "usd": 0.02,
+                "diem": 0.02
+              },
+              "medium": {
+                "usd": 0.07,
+                "diem": 0.07
+              }
+            },
+            "2K": {
+              "high": {
+                "usd": 0.5,
+                "diem": 0.5
+              },
+              "low": {
+                "usd": 0.03,
+                "diem": 0.03
+              },
+              "medium": {
+                "usd": 0.13,
+                "diem": 0.13
+              }
+            },
+            "4K": {
+              "high": {
+                "usd": 0.83,
+                "diem": 0.83
+              },
+              "low": {
+                "usd": 0.05,
+                "diem": 0.05
+              },
+              "medium": {
+                "usd": 0.21,
+                "diem": 0.21
+              }
             }
           },
           "upscale": {
@@ -215,13 +352,23 @@
             }
           }
         },
+        "model_sets": [
+          "venice_recommendations",
+          "featured"
+        ],
         "constraints": {
-          "promptCharacterLimit": 32000,
+          "promptCharacterLimit": 10000,
           "defaultResolution": "1K",
           "resolutions": [
             "1K",
             "2K",
             "4K"
+          ],
+          "defaultQuality": "high",
+          "qualities": [
+            "low",
+            "medium",
+            "high"
           ],
           "aspectRatios": [
             "1:1",
@@ -241,6 +388,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "GPT Image 2",
         "offline": false,
         "privacy": "anonymized",
@@ -285,6 +434,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "GPT Image 1.5",
         "offline": false,
         "privacy": "anonymized",
@@ -335,9 +486,62 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Hunyuan Image 3.0",
         "offline": false,
         "privacy": "private",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1780444800,
+      "id": "ideogram-v4",
+      "model_spec": {
+        "pricing": {
+          "generation": {
+            "usd": 0.06,
+            "diem": 0.06
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "constraints": {
+          "promptCharacterLimit": 10000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "21:9",
+            "9:16",
+            "2:3",
+            "3:4",
+            "4:5"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
+        "name": "Ideogram V4",
+        "offline": false,
+        "privacy": "anonymized",
         "traits": []
       },
       "object": "model",
@@ -383,7 +587,214 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "ImagineArt 1.5 Pro",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1779408000,
+      "id": "krea-v2-large",
+      "model_spec": {
+        "betaModel": true,
+        "pricing": {
+          "generation": {
+            "usd": 0.07,
+            "diem": 0.07
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "constraints": {
+          "promptCharacterLimit": 5000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "2:3",
+            "9:16"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1,
+          "maxStyleReferences": 3,
+          "supportsStyleReferenceStrength": true
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": true,
+        "name": "Krea v2 Large",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1779408000,
+      "id": "krea-v2-medium",
+      "model_spec": {
+        "betaModel": true,
+        "pricing": {
+          "generation": {
+            "usd": 0.04,
+            "diem": 0.04
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "constraints": {
+          "promptCharacterLimit": 5000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "2:3",
+            "9:16"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1,
+          "maxStyleReferences": 3,
+          "supportsStyleReferenceStrength": true
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": true,
+        "name": "Krea v2 Medium",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1781654400,
+      "id": "luma-uni-1",
+      "model_spec": {
+        "pricing": {
+          "generation": {
+            "usd": 0.05,
+            "diem": 0.05
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "constraints": {
+          "promptCharacterLimit": 6000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "9:16",
+            "2:3"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1,
+          "maxStyleReferences": 3,
+          "supportsStyleReferenceStrength": false
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": true,
+        "name": "Luma Uni-1",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1781654400,
+      "id": "luma-uni-1-max",
+      "model_spec": {
+        "pricing": {
+          "generation": {
+            "usd": 0.12,
+            "diem": 0.12
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "model_sets": [
+          "venice_recommendations"
+        ],
+        "constraints": {
+          "promptCharacterLimit": 6000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "9:16",
+            "2:3"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1,
+          "maxStyleReferences": 3,
+          "supportsStyleReferenceStrength": false
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": true,
+        "name": "Luma Uni-1 Max",
         "offline": false,
         "privacy": "anonymized",
         "traits": []
@@ -451,6 +862,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": true,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Nano Banana 2",
         "offline": false,
         "privacy": "anonymized",
@@ -490,6 +903,9 @@
             }
           }
         },
+        "model_sets": [
+          "featured"
+        ],
         "constraints": {
           "promptCharacterLimit": 32768,
           "defaultResolution": "1K",
@@ -516,7 +932,63 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": true,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Nano Banana Pro",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1782777600,
+      "id": "nano-banana-2-lite",
+      "model_spec": {
+        "pricing": {
+          "generation": {
+            "usd": 0.06,
+            "diem": 0.06
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "model_sets": [
+          "venice_recommendations"
+        ],
+        "constraints": {
+          "promptCharacterLimit": 10000,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "21:9",
+            "9:16",
+            "2:3",
+            "3:4",
+            "4:5"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
+        "name": "Nano Banana 2 Lite",
         "offline": false,
         "privacy": "anonymized",
         "traits": []
@@ -565,6 +1037,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Recraft V4",
         "offline": false,
         "privacy": "anonymized",
@@ -614,6 +1088,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Recraft V4 Pro",
         "offline": false,
         "privacy": "anonymized",
@@ -663,6 +1139,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Seedream V4.5",
         "offline": false,
         "privacy": "anonymized",
@@ -712,7 +1190,72 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Seedream V5 Lite",
+        "offline": false,
+        "privacy": "anonymized",
+        "traits": []
+      },
+      "object": "model",
+      "owned_by": "venice.ai",
+      "type": "image"
+    },
+    {
+      "created": 1783468800,
+      "id": "seedream-v5-pro",
+      "model_spec": {
+        "pricing": {
+          "resolutions": {
+            "1K": {
+              "usd": 0.06,
+              "diem": 0.06
+            },
+            "2K": {
+              "usd": 0.11,
+              "diem": 0.11
+            }
+          },
+          "upscale": {
+            "2x": {
+              "usd": 0.02,
+              "diem": 0.02
+            },
+            "4x": {
+              "usd": 0.08,
+              "diem": 0.08
+            }
+          }
+        },
+        "model_sets": [
+          "venice_recommendations"
+        ],
+        "constraints": {
+          "promptCharacterLimit": 10000,
+          "defaultResolution": "2K",
+          "resolutions": [
+            "1K",
+            "2K"
+          ],
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "9:16",
+            "2:3",
+            "3:4"
+          ],
+          "defaultAspectRatio": "1:1",
+          "steps": {
+            "default": 20,
+            "max": 50
+          },
+          "widthHeightDivisor": 1
+        },
+        "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": true,
+        "supportsStyleReferences": false,
+        "name": "Seedream V5 Pro",
         "offline": false,
         "privacy": "anonymized",
         "traits": []
@@ -761,6 +1304,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Qwen Image 2",
         "offline": false,
         "privacy": "anonymized",
@@ -813,6 +1358,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Qwen Image 2 Pro",
         "offline": false,
         "privacy": "anonymized",
@@ -862,6 +1409,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Wan 2.7",
         "offline": false,
         "privacy": "anonymized",
@@ -911,6 +1460,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Wan 2.7 Pro",
         "offline": false,
         "privacy": "anonymized",
@@ -925,9 +1476,15 @@
       "id": "grok-imagine-image",
       "model_spec": {
         "pricing": {
-          "generation": {
-            "usd": 0.0325,
-            "diem": 0.0325
+          "resolutions": {
+            "1K": {
+              "usd": 0.03,
+              "diem": 0.03
+            },
+            "2K": {
+              "usd": 0.04,
+              "diem": 0.04
+            }
           },
           "upscale": {
             "2x": {
@@ -940,21 +1497,17 @@
             }
           }
         },
-        "model_sets": [
-          "venice_recommendations"
-        ],
         "constraints": {
           "promptCharacterLimit": 7500,
-          "defaultResolution": "1k",
+          "defaultResolution": "1K",
           "resolutions": [
-            "1k",
-            "2k"
+            "1K",
+            "2K"
           ],
           "aspectRatios": [
             "1:1",
             "16:9",
             "9:16",
-            "4:3",
             "3:4",
             "3:2",
             "2:3"
@@ -967,63 +1520,9 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
-        "name": "Grok Imagine (SOTA)",
-        "offline": false,
-        "privacy": "private",
-        "traits": []
-      },
-      "object": "model",
-      "owned_by": "venice.ai",
-      "type": "image"
-    },
-    {
-      "created": 1775260800,
-      "id": "grok-imagine-image-pro",
-      "model_spec": {
-        "pricing": {
-          "generation": {
-            "usd": 0.085,
-            "diem": 0.085
-          },
-          "upscale": {
-            "2x": {
-              "usd": 0.02,
-              "diem": 0.02
-            },
-            "4x": {
-              "usd": 0.08,
-              "diem": 0.08
-            }
-          }
-        },
-        "model_sets": [
-          "venice_recommendations"
-        ],
-        "constraints": {
-          "promptCharacterLimit": 7500,
-          "defaultResolution": "1k",
-          "resolutions": [
-            "1k",
-            "2k"
-          ],
-          "aspectRatios": [
-            "1:1",
-            "16:9",
-            "9:16",
-            "4:3",
-            "3:4",
-            "3:2",
-            "2:3"
-          ],
-          "defaultAspectRatio": "1:1",
-          "steps": {
-            "default": 20,
-            "max": 50
-          },
-          "widthHeightDivisor": 1
-        },
-        "supportsWebSearch": false,
-        "name": "Grok Imagine Pro (20260207)",
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
+        "name": "Grok Imagine",
         "offline": false,
         "privacy": "private",
         "traits": []
@@ -1061,6 +1560,8 @@
           "widthHeightDivisor": 8
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Lustify SDXL",
         "modelSource": "https://civitai.com/models/573152/lustify-sdxl-nsfw-checkpoint",
         "offline": false,
@@ -1103,9 +1604,8 @@
           "widthHeightDivisor": 8
         },
         "supportsWebSearch": false,
-        "deprecation": {
-          "date": "2026-04-16T00:00:00.000Z"
-        },
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Lustify v7",
         "modelSource": "https://civitai.com/models/573152/lustify-sdxl-nsfw-checkpoint",
         "offline": false,
@@ -1150,6 +1650,8 @@
           "widthHeightDivisor": 8
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Lustify v8",
         "modelSource": "https://civitai.com/models/573152/lustify-sdxl-nsfw-checkpoint",
         "offline": false,
@@ -1168,8 +1670,8 @@
       "model_spec": {
         "pricing": {
           "generation": {
-            "usd": 0.01,
-            "diem": 0.01
+            "usd": 0.03,
+            "diem": 0.03
           },
           "upscale": {
             "2x": {
@@ -1183,18 +1685,31 @@
           }
         },
         "constraints": {
-          "promptCharacterLimit": 1500,
+          "promptCharacterLimit": 2048,
+          "aspectRatios": [
+            "1:1",
+            "3:2",
+            "16:9",
+            "21:9",
+            "9:16",
+            "2:3",
+            "3:4",
+            "4:5"
+          ],
+          "defaultAspectRatio": "1:1",
           "steps": {
-            "default": 8,
-            "max": 8
+            "default": 20,
+            "max": 50
           },
-          "widthHeightDivisor": 8
+          "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Qwen Image",
         "modelSource": "https://huggingface.co/Qwen/Qwen-Image",
         "offline": false,
-        "privacy": "private",
+        "privacy": "anonymized",
         "traits": [
           "highest_quality"
         ]
@@ -1235,6 +1750,8 @@
           "widthHeightDivisor": 16
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Anime (WAI)",
         "modelSource": "https://civitai.com/models/827184?modelVersionId=1761560",
         "offline": false,
@@ -1277,6 +1794,8 @@
           "widthHeightDivisor": 8
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Z-Image Turbo",
         "modelSource": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
         "offline": false,
@@ -1311,7 +1830,8 @@
           }
         },
         "model_sets": [
-          "venice_recommendations"
+          "venice_recommendations",
+          "featured"
         ],
         "constraints": {
           "promptCharacterLimit": 7500,
@@ -1322,6 +1842,8 @@
           "widthHeightDivisor": 8
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Chroma",
         "modelSource": "https://huggingface.co/lodestones/Chroma1-HD",
         "offline": false,
@@ -1361,6 +1883,8 @@
           "widthHeightDivisor": 1
         },
         "supportsWebSearch": false,
+        "supportsOptimizePromptThinking": false,
+        "supportsStyleReferences": false,
         "name": "Background Remover",
         "offline": false,
         "privacy": "anonymized",
