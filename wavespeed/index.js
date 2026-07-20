@@ -24,7 +24,10 @@ const authHeaders = (extra = {}) => ({
 const randomSeed = () => Math.floor(Math.random() * 2_147_483_647);
 
 /** Poll a prediction until it completes or fails. */
-const pollPrediction = async (url, { interval = 2000, maxAttempts = 60 } = {}) => {
+// seedream-v5-pro has been observed queueing 3-4 min on WaveSpeed, so the
+// default window is 10 min (was 2, which timed out on completed generations —
+// wave-history --upload recovers those, but better not to need it).
+const pollPrediction = async (url, { interval = 2000, maxAttempts = 300 } = {}) => {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await fetch(url, { headers: authHeaders() });
     if (!response.ok) {

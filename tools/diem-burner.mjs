@@ -280,7 +280,12 @@ async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
       exit_code: exitCode,
     });
 
-    if (exitCode !== 0) {
+    if (exitCode === 2) {
+      // venice exit 2 = prompt blocked by moderation — skip this prompt, but
+      // it's not an infrastructure failure, so don't count it toward abort.
+      log(`[${pool}] prompt blocked by Venice moderation — skipping ${path.basename(promptFile)}`);
+      consecutiveFailures = 0;
+    } else if (exitCode !== 0) {
       consecutiveFailures++;
       if (consecutiveFailures >= 2) {
         console.error(`[diem-burner] [${pool}] two consecutive venice failures — aborting`);

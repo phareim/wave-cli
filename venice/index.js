@@ -52,6 +52,19 @@ let DEBUG = false;
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
+// When Venice's moderation blocks a prompt it returns HTTP 200 with a fixed
+// black "content violates our terms of service" card instead of an error —
+// identical bytes every time (one placeholder was silently uploaded to aiwdm
+// by the diem-burner on 2026-07-19 before this guard existed).
+const BLOCKED_CONTENT_SHA256 = new Set([
+    "43c04f19bcba6cdb119ecd5e0cd63eff19a17c6d3094c3668b71b86d2f08b98b",
+]);
+
+const isBlockedContentCard = async (buffer) => {
+    const { createHash } = await import("crypto");
+    return BLOCKED_CONTENT_SHA256.has(createHash("sha256").update(buffer).digest("hex"));
+};
+
 // --format accepts a named size (square, wide, …), a ratio ("2:3" — scaled to
 // fill the 1280 box), or explicit pixels ("1024x1280"). Default 1024×1024.
 const resolveDimensions = (format) => {
@@ -229,6 +242,13 @@ const run = async (options) => {
         }
 
         const buffer = Buffer.from(await response.arrayBuffer());
+        // Exit code 2 = blocked, so batch callers (diem-burner) can skip the
+        // prompt without treating it as an infrastructure failure.
+        if (await isBlockedContentCard(buffer)) {
+            spin.fail("Venice blocked this prompt (ToS placeholder returned) — nothing saved or uploaded. Try rewording the prompt or another model.");
+            process.exitCode = 2;
+            return;
+        }
         const generationTimeMs = spin.elapsed();
         spin.succeed(`generated in ${ui.fmtDuration(generationTimeMs)}`);
 
