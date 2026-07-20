@@ -31,7 +31,7 @@ Unified command-line tools for AI image and video generation: **Venice.ai**, **W
 | `wave-replay` | Reconstruct or re-run the command that produced a metadata sidecar |
 | `wave-balance` | Show current Venice + Wavespeed account balances |
 | `wave-history` | Browse Wavespeed prediction history (~7 days); `--upload` publishes completed outputs to aiwdm with a duplicate check |
-| `random-art` | One image from a random `~/prompts/**/*.txt` (the diem-burner pool). Venice + seedream-v5-pro at 1K by default; `--gpt` → gpt-image-2 (low quality), `--wave` → WaveSpeed, `--format <f>` overrides the `DIEM_BURNER_FORMATS` default, `--dry-run` prints the pick |
+| `random-art` | Images from random `~/prompts/**/*.txt` files (the diem-burner pool). Venice + seedream-v5-pro at 1K by default; `--count N` generates N artworks with a fresh prompt + format each, `--gpt` → gpt-image-2 (low quality), `--wave` → WaveSpeed, `--prompt <file>` pins the file, `--list` prints the pool, `--dry-run` prints the picks — see "Random art" below |
 | `tools/diem-burner.mjs` | Nightly job (not a bin): spends leftover Venice DIEM + a slice of the monthly USD credits on random `~/prompts/*.txt` before the 00:00 UTC epoch reset — see "DIEM burner" below |
 
 ## Environment variables
@@ -134,6 +134,22 @@ wave-replay videos/venice/venice_<id>.mp4 --exec    # re-run it directly
 ```
 
 Wavespeed sidecars produced with `--optimize` replay the *post-optimization* prompt — re-running the optimizer is non-deterministic and would diverge from the saved output.
+
+## Random art — one-off images from the prompt pool
+
+`random-art` is the manual sibling of the DIEM burner: it draws from the same `~/prompts/**/*.txt` pool (recursive; `old/`, `short/`, `images/` and dotdirs excluded) and the same env file (`~/.config/diem-burner/env`, for `DIEM_BURNER_FORMATS` and API keys), but carries none of the budget logic — each invocation just generates.
+
+```bash
+random-art                                 # one Venice seedream-v5-pro image at 1K, random prompt + format
+random-art --count 3                       # three artworks; fresh random prompt + format each, no repeats until the pool is exhausted
+random-art --wave --format 2:3             # route through the WaveSpeed CLI at 2:3
+random-art --gpt                           # gpt-image-2 at low quality instead of seedream
+random-art --prompt ~/prompts/mirror.txt   # pin the prompt file, skip the random pick
+random-art --list                          # print the prompt pool
+random-art --count 5 --dry-run             # show the five picks + commands, generate nothing
+```
+
+Every image auto-uploads to aiwdm tagged `random-art` (vs the burner's `diem-burner`). Exit codes: 0 ok, 1 failure, 2 prompt blocked by Venice moderation. With `--count > 1` a failure or moderation block doesn't abort the batch — a `● N generated · N blocked · N failed` footer sums it up, and the exit code is 1 only if something actually failed.
 
 ## DIEM burner — spend leftover Venice DIEM nightly
 

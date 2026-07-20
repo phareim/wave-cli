@@ -17,7 +17,7 @@
   },
   "type": "module",
   "scripts": {
-    "test": "node --test tests/smoke.test.js"
+    "test": "node --test tests/smoke.test.js tests/random-art.test.js"
   },
   "keywords": [
     "venice",

@@ -41,6 +41,10 @@ lib/
 │                    # --format flag every CLI shares. User-typed ratios are NEVER
 │                    # round-tripped through pixels (2:3 → 2732*4096 → 683:1024 was the
 │                    # bug that broke seedream-v5-pro).
+├── prompt-pool.js   # ~/prompts pool plumbing for random-art: loadEnvFile (KEY=value,
+│                    # never overrides ambient env), collectPromptFiles (recursive .txt,
+│                    # EXCLUDED_DIRS), shuffle. diem-burner.mjs intentionally keeps its
+│                    # own byte-identical copies — see the module header before migrating.
 └── venice-video.js  # Venice /video/queue + /video/retrieve polling core (content-type
                      # flip to video/mp4 is the completion signal), saveVideo,
                      # resolveImageInput (local file → base64 data URI), isHttpUrl
@@ -60,6 +64,7 @@ wavespeed/  index.js, cli.js, config.js, models.js (hardcoded modelEndpoints + a
             response-handlers.js (download outputs via lib/media.fetchOutputs)
 xai/        index.js, cli.js, config.js — direct x.ai images/generations ("imagine")
 tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history),
+            random-art.mjs (random-prompt dispatcher, see "random-art" below),
             diem-burner.mjs (nightly leftover-DIEM spender; no bin entry — run by the
             diem-burner.timer systemd user unit, see README "DIEM burner")
 ```
@@ -75,6 +80,28 @@ tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave
 - `wave-replay` → `tools/replay.js`
 - `wave-balance` → `tools/balance.js`
 - `wave-history` → `tools/history.js`
+- `random-art` → `tools/random-art.mjs`
+
+### random-art (`tools/random-art.mjs`)
+
+A thin dispatcher, the manual sibling of `diem-burner.mjs`: pick a random `.txt` from the
+`~/prompts` pool (via `lib/prompt-pool.js`), pick a format (`--format` > random from
+`DIEM_BURNER_FORMATS` > `9:16`), then spawn the **in-repo** `venice/index.js` (default) or
+`wavespeed/index.js` (`--wave`) once per generation with `--aiwdm-tags random-art` — the
+child owns the banner/spinner/upload; random-art only prints `⚄` pick lines, `↻ generation
+i/N` headers, and a batch footer. Flags: `--count N` (fresh prompt + format each iteration,
+shuffle-without-replacement), `--gpt`, `--prompt <file>`, `--list`, `--dry-run`.
+
+- **Exit codes**: single run propagates the child verbatim (venice exit 2 = moderation);
+  `--count > 1` continues on error — moderation counts as a skip, real failures make the
+  final exit 1.
+- **Resolution casing is load-bearing**: venice takes `--resolution 1K`, wave `--resolution 1k`.
+- **Test seams** (`tests/random-art.test.js`): `HOME=<tmpdir>` redirects the pool + env file,
+  `RANDOM_ART_CHILD=<script>` replaces the spawned child (venice smoke mode can't simulate
+  failure/moderation).
+- **diem-burner shares no code with it** by design: the burner keeps its own copies of the
+  pool helpers (it spends real money unattended) — don't migrate it to `lib/prompt-pool.js`
+  without a supervised nightly run.
 
 ### Output language (lib/ui.js)
 
