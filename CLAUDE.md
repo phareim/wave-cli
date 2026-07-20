@@ -96,6 +96,7 @@ One `--prompt` flag, disambiguated by what exists on disk (there is no `--file`)
 One `--format` flag on every CLI (no `--aspect-ratio`, no venice `--width`/`--height`): named (`square`, `wide`, …), ratio (`"2:3"`), or pixels (`"1024x1280"`/`"2048*2048"`). Each CLI converts to what its API takes:
 
 - **venice**: → width/height. Named via `venice/config.js image_size`; ratios scaled into the 1280 box; everything floored to the model's divisor grid. Default 1024×1024.
+- **wave**: no `--format` means `DEFAULT_FORMAT` (`9:16` in `wavespeed/config.js`), applied to both API shapes below; `DEFAULT_MODEL` is `v5` (seedream-v5-pro, aspect_ratio + 1k resolution).
 - **wave pixel models**: → `"W*H"` size. Known ratio keys use the curated `image_size` map; other ratios scale into the 4096 box; then `constrainDimensions`.
 - **wave aspect models** (noSize + `-to-video` categories): → `aspect_ratio` via `toAspectRatio` — a user-typed ratio passes through verbatim; named/pixel formats are reduced.
 - **imagine / venice-video**: → `aspect_ratio` verbatim (named via `NAMED_RATIOS`); unresolvable values go to the API as-is.

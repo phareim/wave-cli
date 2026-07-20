@@ -86,11 +86,11 @@ wave --prompt ./prompts/ --count 2
 - **ratio** — `2:3`, `16:9`, … forwarded *verbatim* to models that take an aspect ratio (all video models, `gpt-image-2`, `seedream-v5-pro`, `imagine`)
 - **pixels** — `1024x1280` or `2048*2048` for pixel-size models (auto-constrained to each model's max dimensions)
 
-Whichever spelling you use is converted to what the target model actually accepts:
+Whichever spelling you use is converted to what the target model actually accepts. `wave` defaults to `--format 9:16` (and `--model v5`, i.e. seedream-v5-pro) when the flags are omitted:
 
 ```bash
 wave --model v5 --prompt "editorial portrait" --format 2:3   # ratio → aspect_ratio 2:3
-wave --prompt "wide shot" --format 16:9                      # ratio → 4096*2304 pixels for a pixel model
+wave --model turbo --prompt "wide shot" --format 16:9        # ratio → 4096*2304 pixels for a pixel model
 venice --prompt "test" --format 1024x768                     # pixels, clamped to 1280 and the 16-grid
 venice-video --prompt "vertical clip" --format 9:16
 ```

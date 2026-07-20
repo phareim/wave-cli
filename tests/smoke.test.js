@@ -106,7 +106,7 @@ test("venice --no-metadata skips sidecar", () => {
   }
 });
 
-test("wavespeed smoke test saves mocked image output", () => {
+test("wavespeed smoke test saves mocked image output with default model + format", () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "wavespeed-smoke-"));
   try {
     runCli(
@@ -130,6 +130,36 @@ test("wavespeed smoke test saves mocked image output", () => {
     assert.equal(metadata.kind, "image");
     assert.equal(metadata.prompt, "smoke test");
     assert.equal(metadata.output_file, imageFile);
+    // Defaults: v5 (seedream-v5-pro) at 9:16/1k — noSize + noSeed model.
+    assert.equal(metadata.model, "bytedance/seedream-v5.0-pro");
+    assert.equal(metadata.aspect_ratio, "9:16");
+    assert.equal(metadata.resolution, "1k");
+    assert.equal(metadata.size, undefined, "noSize models must not receive a size");
+    assert.equal(metadata.seed, undefined, "noSeed models must not receive a seed");
+  } finally {
+    removeDir(outputDir);
+  }
+});
+
+test("wavespeed pixel models default to 9:16 size and auto-generate a seed", () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "wavespeed-pixel-default-"));
+  try {
+    runCli(
+      ["wavespeed/index.js", "--model", "turbo", "--prompt", "smoke test"],
+      {
+        WAVESPEED_KEY: "test-key",
+        WAVESPEED_SMOKE_TEST: "1",
+        WAVESPEED_PATH: outputDir,
+        NODE_ENV: "test"
+      }
+    );
+
+    const files = fs.readdirSync(outputDir);
+    const sidecar = files.find((f) => f.endsWith(".json"));
+    assert(sidecar, "Expected wavespeed metadata sidecar");
+    const metadata = JSON.parse(fs.readFileSync(path.join(outputDir, sidecar), "utf8"));
+    // 9:16 → 2304*4096, constrained to turbo's 1536 max box.
+    assert.equal(metadata.size, "864*1536");
     assert.equal(typeof metadata.seed, "number", "Expected auto-generated seed in sidecar");
   } finally {
     removeDir(outputDir);

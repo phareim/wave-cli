@@ -1,4 +1,4 @@
-import { DEFAULT_FORMAT } from "./config.js";
+import { image_size, DEFAULT_FORMAT } from "./config.js";
 
 /**
  * Build parameters for a Wavespeed API request
@@ -11,7 +11,7 @@ export function buildParameters(category, options, modelMetadata = {}) {
   const params = { prompt: options.prompt };
 
   if (category === "text-to-image" && !modelMetadata.noSize) {
-    params.size = options.size || DEFAULT_FORMAT;
+    params.size = options.size || image_size[DEFAULT_FORMAT] || DEFAULT_FORMAT;
   }
 
   if (category === "image-to-image") {

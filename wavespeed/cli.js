@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { modelEndpoints } from "./models.js";
-import { image_size, DEFAULT_MODEL } from "./config.js";
+import { image_size, DEFAULT_MODEL, DEFAULT_FORMAT } from "./config.js";
 
 export function setupCLI() {
   const program = new Command();
@@ -11,7 +11,7 @@ export function setupCLI() {
     .description("Generate images and video with the Wavespeed.ai API.")
     .option("--prompt <text|file|dir>", "Prompt text, a file to read it from, or a directory of .txt prompts (default: ./prompt.txt).")
     .option("--model <modelKey>", "AI model to use.", DEFAULT_MODEL)
-    .option("--format <format>", "Size/aspect: named (square, wide, …), ratio ('2:3', '16:9'), or pixels ('2048*2048'). Ratio-based models (video, gpt-image-2, seedream-v5-pro) get the ratio; pixel models get pixels.")
+    .option("--format <format>", `Size/aspect: named (square, wide, …), ratio ('2:3', '16:9'), or pixels ('2048*2048'). Ratio-based models (video, gpt-image-2, seedream-v5-pro) get the ratio; pixel models get pixels. Default: ${DEFAULT_FORMAT}.`)
     .option("--images <urls...>", "Input image URLs for image-to-image / image-to-video models (space-separated, max 10).")
     .option("--negative-prompt <text>", "Negative prompt to guide what to avoid in generation.")
     .option("--seed <number>", "Seed for reproducible results.")
@@ -40,7 +40,10 @@ export function setupCLI() {
       console.log(`
 Default Model:
   ${DEFAULT_MODEL} (${modelEndpoints[DEFAULT_MODEL]})
-  Z-Image-Turbo - 6B parameter text-to-image model, photorealistic in sub-second time.
+  Seedream v5.0 Pro - ByteDance flagship text-to-image, aspect_ratio + resolution (default: 1k).
+
+Default Format:
+  ${DEFAULT_FORMAT}
 
 Available Models:
   flux-2-flex, flux2, flex              FLUX.2 [flex] - Fast, flexible text-to-image with enhanced realism
@@ -72,7 +75,7 @@ Available Formats:
   ${availableSizes}
 
 Examples:
-  # Basic usage (default model: turbo / Z-Image-Turbo)
+  # Basic usage (default model: v5 / Seedream v5.0 Pro, default format: ${DEFAULT_FORMAT})
   wave --prompt "A futuristic cityscape at dusk"
 
   # Specific models and formats

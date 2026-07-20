@@ -4,7 +4,7 @@ import path from "path";
 
 import { setupCLI } from "./cli.js";
 import { getModelEndpoint, getModelInfo, constrainDimensions } from "./models.js";
-import { image_size, API_BASE_URL } from "./config.js";
+import { image_size, API_BASE_URL, DEFAULT_FORMAT } from "./config.js";
 import { buildParameters } from "./parameter-builders.js";
 import { handleResponse } from "./response-handlers.js";
 import * as ui from "../lib/ui.js";
@@ -327,23 +327,22 @@ const main = async () => {
   const category = modelInfo?.metadata?.category || "text-to-image";
   const takesAspectRatio = modelInfo?.metadata?.noSize === true || category.endsWith("-to-video");
 
-  // One --format flag, two API shapes: aspect-ratio models (video, gpt-image-2,
-  // seedream-v5-pro) get a ratio — user-typed ratios pass through verbatim,
-  // named/pixel formats are reduced — while pixel models get a "W*H" size
-  // constrained to the model's max dimensions.
+  // One --format flag (default 9:16), two API shapes: aspect-ratio models
+  // (video, gpt-image-2, seedream-v5-pro) get a ratio — user-typed ratios pass
+  // through verbatim, named/pixel formats are reduced — while pixel models get
+  // a "W*H" size constrained to the model's max dimensions.
+  const format = options.format || DEFAULT_FORMAT;
   let size;
   if (takesAspectRatio) {
-    if (options.format) {
-      const ratio = toAspectRatio(options.format, image_size);
-      if (ratio) {
-        options.aspectRatio = ratio;
-      } else {
-        ui.warn(`--format '${options.format}' not understood — this model takes an aspect ratio like 2:3 or 16:9.`);
-      }
+    const ratio = toAspectRatio(format, image_size);
+    if (ratio) {
+      options.aspectRatio = ratio;
+    } else {
+      ui.warn(`--format '${format}' not understood — this model takes an aspect ratio like 2:3 or 16:9.`);
     }
   } else {
-    const f = parseFormat(options.format);
-    let sizeStr = "4096*4096";
+    const f = parseFormat(format);
+    let sizeStr = image_size[DEFAULT_FORMAT];
     if (f?.type === "pixels") {
       sizeStr = `${f.width}*${f.height}`;
     } else if (f?.type === "ratio") {
@@ -354,7 +353,7 @@ const main = async () => {
       if (image_size[f.name]) {
         sizeStr = image_size[f.name];
       } else {
-        ui.warn(`Unknown format '${options.format}'. Valid: ${Object.keys(image_size).join(", ")}, W:H, W*H. Using 4096*4096.`);
+        ui.warn(`Unknown format '${format}'. Valid: ${Object.keys(image_size).join(", ")}, W:H, W*H. Using ${image_size[DEFAULT_FORMAT]}.`);
       }
     }
     size = constrainDimensions(sizeStr, modelEndpoint);

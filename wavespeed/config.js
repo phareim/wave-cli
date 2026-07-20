@@ -18,6 +18,6 @@ export const image_size = {
   "4:1": "4096*1024"
 };
 
-export const DEFAULT_MODEL = "turbo";
-export const DEFAULT_FORMAT = "4096*4096";
+export const DEFAULT_MODEL = "v5";
+export const DEFAULT_FORMAT = "9:16";
 export const API_BASE_URL = "https://api.wavespeed.ai/api/v3";
