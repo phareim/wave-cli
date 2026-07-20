@@ -12,6 +12,7 @@
     "wave-replay": "./tools/replay.js",
     "wave-balance": "./tools/balance.js",
     "wave-history": "./tools/history.js",
+    "random-art": "./tools/random-art.mjs",
     "wan2.6-flash": "./venice/wan26-flash.js"
   },
   "type": "module",

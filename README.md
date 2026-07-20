@@ -31,7 +31,8 @@ Unified command-line tools for AI image and video generation: **Venice.ai**, **W
 | `wave-replay` | Reconstruct or re-run the command that produced a metadata sidecar |
 | `wave-balance` | Show current Venice + Wavespeed account balances |
 | `wave-history` | Browse Wavespeed prediction history (~7 days); `--upload` publishes completed outputs to aiwdm with a duplicate check |
-| `tools/diem-burner.mjs` | Nightly job (not a bin): spends leftover Venice DIEM on random `~/prompts/*.txt` before the 00:00 UTC epoch reset — see "DIEM burner" below |
+| `random-art` | One image from a random `~/prompts/**/*.txt` (the diem-burner pool). Venice + seedream-v5-pro at 1K by default; `--gpt` → gpt-image-2 (low quality), `--wave` → WaveSpeed, `--format <f>` overrides the `DIEM_BURNER_FORMATS` default, `--dry-run` prints the pick |
+| `tools/diem-burner.mjs` | Nightly job (not a bin): spends leftover Venice DIEM + a slice of the monthly USD credits on random `~/prompts/*.txt` before the 00:00 UTC epoch reset — see "DIEM burner" below |
 
 ## Environment variables
 
@@ -141,9 +142,13 @@ Venice's daily DIEM allowance expires at 00:00 UTC. `tools/diem-burner.mjs` runs
 - Checks the live balance via `GET /api_keys/rate_limits`; unless `--force`, it exits quietly when more than 100 minutes remain before the epoch — so a stray manual/boot-time run can't burn the *new* day's budget.
 - Picks random prompts from `~/prompts/**/*.txt` — all subfolders except `old/`, `short/`, and `images/` (plus dotdirs/`node_modules`) — with no repeats within a run, and shells out to `venice --prompt <file> --model <id> --format <ratio> --resolution 1K --aiwdm-tags diem-burner`, so every image auto-uploads to aiwdm tagged `venice, <model>, diem-burner`. The format is drawn at random per image from `DIEM_BURNER_FORMATS` in the env file (comma-separated aspect ratios; currently `9:16`); `--resolution 1K` is pinned because tier-priced models otherwise bill their *default* tier (seedream-v5-pro defaults to 2K: 0.11 instead of 0.06 — verified empirically).
 - Model mix: `seedream-v5-pro` (0.06 at 1K) while the budget covers it; `gpt-image-2` at **low quality** (0.02 at 1K, vs 0.26 at its default high) soaks up the tail below one seedream image, so runs burn down to < 0.02 left. Pricing is read live from `/models?type=image`, and the *actual* charge is taken from a balance re-read after each generation.
-- Stops when the budget drops below one seedream image, at 12 images, within 5 minutes of the epoch, or after two consecutive `venice` failures.
+- Stops when the budget drops below one seedream image, at 12 images per pool, within 5 minutes of the epoch, or after two consecutive `venice` failures.
 
-Flags: `--dry-run` (plan only), `--force` (ignore the window guard), `--max-images N`. Secrets: `VENICE_API_TOKEN` in `~/.config/diem-burner/env` (loaded by the script; never overrides the ambient env). Log: one JSON line per image in `~/.local/share/diem-burner.jsonl`. Killswitch: `systemctl --user disable --now diem-burner.timer`.
+### USD phase — the monthly subscription credits
+
+After the DIEM phase the burner spends a nightly slice of the **USD balance** (Venice's monthly subscription credits — same `balances` object on `rate_limits`, priced 1:1 with DIEM on every model). The credits are use-it-or-lose-it at the billing-cycle boundary, so the slice is **balance ÷ days-until-cycle-reset**: a steady drip early in the month that ramps up and empties the pool on the last night. The API doesn't expose the reset day — the burner *learns* it by watching for the balance to jump up by more than $5 between runs (the grant landing) and remembers it in `~/.local/share/diem-burner-state.json`. Until a grant has been observed it falls back to balance ÷ 30. Env overrides (in the same env file): `USD_CYCLE_RESET_DAY` (1–28, wins over the learned day) and `USD_NIGHTLY_BUDGET` (fixed nightly amount; `0` disables the USD phase entirely). Log lines carry `pool: "DIEM" | "USD"` and `budget_before`/`budget_after` (previously `diem_before`/`diem_after`).
+
+Flags: `--dry-run` (plan only), `--force` (ignore the window guard), `--max-images N` (per pool). Secrets: `VENICE_API_TOKEN` in `~/.config/diem-burner/env` (loaded by the script; never overrides the ambient env). Log: one JSON line per image in `~/.local/share/diem-burner.jsonl`. Killswitch: `systemctl --user disable --now diem-burner.timer`.
 
 ## Development
 

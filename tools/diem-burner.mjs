@@ -1,17 +1,27 @@
 #!/usr/bin/env node
 
 // diem-burner — spend the day's leftover Venice DIEM on artwork before it
-// expires at the daily epoch (00:00 UTC). Picks random prompt files from
+// expires at the daily epoch (00:00 UTC), then drip a slice of the monthly
+// USD credit balance the same way. Picks random prompt files from
 // ~/prompts/*.txt and shells out to the `venice` CLI, which generates and
 // auto-uploads to aiwdm. Runs nightly via the diem-burner.timer systemd
 // user unit; secrets come from ~/.config/diem-burner/env.
 //
+// The USD pool is Venice's monthly subscription credits (use-it-or-lose-it
+// at the billing cycle). Each night spends balance ÷ days-until-cycle-reset,
+// so the drip ramps up and empties the pool on the last night. The reset day
+// isn't exposed by the API — the burner learns it by watching for the balance
+// to jump up (the grant landing) and remembers it in the state file. Until a
+// grant has been observed it falls back to balance/30. Overrides in the env
+// file: USD_CYCLE_RESET_DAY (1-28, wins over the learned day) and
+// USD_NIGHTLY_BUDGET (fixed nightly amount; 0 disables the USD phase).
+//
 // Usage: diem-burner.mjs [--dry-run] [--force] [--max-images N]
-//   --dry-run     report balance, window verdict and planned picks; generate nothing
+//   --dry-run     report balances, window verdict and planned picks; generate nothing
 //   --force       skip the "close to epoch" window guard (manual runs)
-//   --max-images  cap generations this run (default 12)
+//   --max-images  cap generations per pool this run (default 12 each)
 
-import { readFile, readdir, appendFile, mkdir } from "fs/promises";
+import { readFile, writeFile, readdir, appendFile, mkdir } from "fs/promises";
 import { spawn } from "child_process";
 import path from "path";
 import os from "os";
@@ -20,6 +30,7 @@ const HOME = os.homedir();
 const ENV_FILE = path.join(HOME, ".config/diem-burner/env");
 const PROMPTS_DIR = path.join(HOME, "prompts");
 const LOG_FILE = path.join(HOME, ".local/share/diem-burner.jsonl");
+const STATE_FILE = path.join(HOME, ".local/share/diem-burner-state.json");
 const VENICE_BIN = path.join(HOME, ".npm-global/bin/venice");
 
 const RATE_LIMITS_URL = "https://api.venice.ai/api/v1/api_keys/rate_limits";
@@ -81,9 +92,10 @@ async function veniceGet(url) {
 async function fetchBalance() {
   const json = await veniceGet(RATE_LIMITS_URL);
   const diem = json?.data?.balances?.DIEM;
+  const usd = json?.data?.balances?.USD ?? 0;
   const nextEpoch = json?.data?.nextEpochBegins;
   if (typeof diem !== "number" || !nextEpoch) throw new Error("unexpected rate_limits response shape");
-  return { diem, nextEpoch: new Date(nextEpoch) };
+  return { diem, usd, nextEpoch: new Date(nextEpoch) };
 }
 
 // DIEM price of one generation at the settings we send (1K where tiered,
@@ -164,7 +176,126 @@ async function appendLog(entry) {
   await appendFile(LOG_FILE, JSON.stringify(entry) + "\n");
 }
 
+async function readState() {
+  try {
+    return JSON.parse(await readFile(STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+async function writeState(state) {
+  await mkdir(path.dirname(STATE_FILE), { recursive: true });
+  await writeFile(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+}
+
+// A jump this big in the USD balance between runs means the monthly grant
+// landed — remember today (UTC) as the cycle reset day.
+const GRANT_JUMP_USD = 5;
+
+// UTC days from now until the next occurrence of `resetDay` (1-28); at least
+// 1 so tonight's slice never divides by zero on reset day itself.
+function daysUntilReset(resetDay) {
+  const now = new Date();
+  const today = now.getUTCDate();
+  let next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), resetDay));
+  if (today >= resetDay) next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, resetDay));
+  return Math.max(1, Math.round((next - now) / 86_400_000));
+}
+
 const minutesUntil = (date) => (date.getTime() - Date.now()) / 60000;
+
+// Spend `budget` of one pool ("DIEM" or "USD") on images. The pool name only
+// affects logging and which balance field the post-image re-read tracks —
+// Venice prices every model identically in both currencies. Returns the
+// number of images generated.
+async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
+  const seedreamCost = costs[SEEDREAM];
+  const gptCost = costs[GPT_IMAGE];
+  const minCost = Math.min(seedreamCost, gptCost);
+  const startBudget = budget;
+  let images = 0;
+  let consecutiveFailures = 0;
+  let poolIdx = 0;
+  // For USD the live balance is a month-scale pool, so the nightly slice is
+  // tracked as budget minus the spend observed between balance reads.
+  let lastUsd = null;
+  if (pool === "USD" && !DRY_RUN) {
+    try {
+      lastUsd = (await fetchBalance()).usd;
+    } catch (err) {
+      log(`[USD] opening balance read failed (${err.message}) — using estimates only`);
+    }
+  }
+
+  while (images < MAX_IMAGES) {
+    if (budget < minCost) {
+      log(`[${pool}] budget ${budget.toFixed(4)} below the cheapest image (${minCost}) — done`);
+      break;
+    }
+    if (minutesUntil(nextEpoch) < CUTOFF_MINUTES) {
+      log(`[${pool}] too close to the epoch to start another generation — done`);
+      break;
+    }
+
+    // Seedream while the budget covers it; gpt-image-2 at low quality soaks
+    // up the tail below one seedream image.
+    const model = budget >= seedreamCost ? SEEDREAM : GPT_IMAGE;
+    const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
+    const promptFile = promptFiles[poolIdx % promptFiles.length];
+    poolIdx++;
+
+    if (DRY_RUN) {
+      log(`[${pool}] dry-run: would generate ${model} ${format} from ${path.basename(promptFile)} (est. ${costs[model]}, budget ${budget.toFixed(4)})`);
+      budget -= costs[model];
+      images++;
+      continue;
+    }
+
+    log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${model} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
+    const exitCode = await runVenice(promptFile, model, format);
+
+    // The real charge comes from re-reading the balance, not from the estimate.
+    let after = budget - costs[model];
+    try {
+      const balances = await fetchBalance();
+      if (pool === "DIEM") {
+        after = balances.diem;
+      } else if (lastUsd !== null) {
+        after = budget - (lastUsd - balances.usd);
+        lastUsd = balances.usd;
+      }
+    } catch (err) {
+      log(`[${pool}] balance re-fetch failed (${err.message}) — falling back to estimate`);
+    }
+
+    await appendLog({
+      ts: new Date().toISOString(),
+      pool,
+      prompt_file: promptFile,
+      model,
+      format,
+      budget_before: Number(budget.toFixed(4)),
+      budget_after: Number(after.toFixed(4)),
+      exit_code: exitCode,
+    });
+
+    if (exitCode !== 0) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= 2) {
+        console.error(`[diem-burner] [${pool}] two consecutive venice failures — aborting`);
+        process.exit(1);
+      }
+    } else {
+      consecutiveFailures = 0;
+      images++;
+    }
+    budget = after;
+  }
+
+  log(`[${pool}] phase complete · ${images} image(s) · ${(startBudget - budget).toFixed(4)} spent`);
+  return images;
+}
 
 async function main() {
   await loadEnvFile(ENV_FILE);
@@ -179,9 +310,9 @@ async function main() {
   }
   log(`formats: ${FORMATS.join(", ")} · resolution ${RESOLUTION}`);
 
-  const { diem, nextEpoch } = await fetchBalance();
+  const { diem, usd, nextEpoch } = await fetchBalance();
   const untilEpoch = minutesUntil(nextEpoch);
-  log(`DIEM balance ${diem.toFixed(4)} · epoch resets in ${Math.round(untilEpoch)} min (${nextEpoch.toISOString()})`);
+  log(`DIEM balance ${diem.toFixed(4)} · USD balance ${usd.toFixed(4)} · epoch resets in ${Math.round(untilEpoch)} min (${nextEpoch.toISOString()})`);
 
   if (!FORCE && untilEpoch > WINDOW_MINUTES) {
     log(`more than ${WINDOW_MINUTES} min until the epoch — not the burn window, exiting (use --force to override)`);
@@ -193,78 +324,66 @@ async function main() {
   const gptCost = costs[GPT_IMAGE];
   log(`live pricing · ${SEEDREAM} ${seedreamCost} DIEM (1K) · ${GPT_IMAGE} ~${gptCost} DIEM (1K ${GPT_QUALITY})`);
 
-  const pool = await promptPool();
-  if (pool.length === 0) {
+  const promptFiles = await promptPool();
+  if (promptFiles.length === 0) {
     console.error(`[diem-burner] no .txt prompt files found in ${PROMPTS_DIR}`);
     process.exit(1);
   }
-  log(`${pool.length} prompt files in the pool`);
+  log(`${promptFiles.length} prompt files in the pool`);
 
-  let budget = diem;
-  let images = 0;
-  let consecutiveFailures = 0;
-  let poolIdx = 0;
-  const minCost = Math.min(seedreamCost, gptCost);
+  const diemImages = await burnPool({ pool: "DIEM", budget: diem, costs, promptFiles, nextEpoch });
 
-  while (images < MAX_IMAGES) {
-    if (budget < minCost) {
-      log(`budget ${budget.toFixed(4)} below the cheapest image (${minCost}) — done`);
-      break;
-    }
-    if (minutesUntil(nextEpoch) < CUTOFF_MINUTES) {
-      log("too close to the epoch to start another generation — done");
-      break;
-    }
-
-    // Seedream while the budget covers it; gpt-image-2 at low quality soaks
-    // up the tail below one seedream image.
-    const model = budget >= seedreamCost ? SEEDREAM : GPT_IMAGE;
-    const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
-    const promptFile = pool[poolIdx % pool.length];
-    poolIdx++;
-
-    if (DRY_RUN) {
-      log(`dry-run: would generate ${model} ${format} from ${path.basename(promptFile)} (est. ${costs[model]} DIEM, budget ${budget.toFixed(4)})`);
-      budget -= costs[model];
-      images++;
-      continue;
-    }
-
-    log(`image ${images + 1}/${MAX_IMAGES} · ${model} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
-    const exitCode = await runVenice(promptFile, model, format);
-
-    // The real charge comes from re-reading the balance, not from the estimate.
-    let after = budget - costs[model];
-    try {
-      after = (await fetchBalance()).diem;
-    } catch (err) {
-      log(`balance re-fetch failed (${err.message}) — falling back to estimate`);
-    }
-
-    await appendLog({
-      ts: new Date().toISOString(),
-      prompt_file: promptFile,
-      model,
-      format,
-      diem_before: Number(budget.toFixed(4)),
-      diem_after: Number(after.toFixed(4)),
-      exit_code: exitCode,
-    });
-
-    if (exitCode !== 0) {
-      consecutiveFailures++;
-      if (consecutiveFailures >= 2) {
-        console.error("[diem-burner] two consecutive venice failures — aborting");
-        process.exit(1);
-      }
-    } else {
-      consecutiveFailures = 0;
-      images++;
-    }
-    budget = after;
+  // Learn the billing-cycle reset day by spotting the monthly grant landing
+  // (USD balance jumped up since the last run).
+  const state = await readState();
+  if (typeof state.last_usd === "number" && usd > state.last_usd + GRANT_JUMP_USD) {
+    state.usd_cycle_reset_day = new Date().getUTCDate();
+    log(`USD balance jumped ${state.last_usd.toFixed(2)} → ${usd.toFixed(2)} — monthly grant detected, cycle reset day learned: ${state.usd_cycle_reset_day}`);
   }
 
-  log(`run complete · ${images} image(s) · ${(diem - budget).toFixed(4)} DIEM spent · ${budget.toFixed(4)} left`);
+  let resetDay = null;
+  if (process.env.USD_CYCLE_RESET_DAY !== undefined) {
+    const parsed = Number(process.env.USD_CYCLE_RESET_DAY);
+    if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 28) resetDay = parsed;
+    else log(`ignoring invalid USD_CYCLE_RESET_DAY '${process.env.USD_CYCLE_RESET_DAY}'`);
+  }
+  if (resetDay === null && Number.isInteger(state.usd_cycle_reset_day)) resetDay = state.usd_cycle_reset_day;
+
+  // Slice: balance ÷ days-until-reset drains the pool exactly at the cycle
+  // boundary; ÷30 is the steady fallback until the reset day is known.
+  let usdBudget, sliceNote;
+  if (resetDay !== null) {
+    const days = daysUntilReset(resetDay);
+    usdBudget = usd / days;
+    sliceNote = `balance/${days} day(s) to reset on the ${resetDay}th`;
+  } else {
+    usdBudget = usd / 30;
+    sliceNote = "balance/30, reset day not yet known";
+  }
+  if (process.env.USD_NIGHTLY_BUDGET !== undefined) {
+    const parsed = Number(process.env.USD_NIGHTLY_BUDGET);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      usdBudget = Math.min(parsed, usd);
+      sliceNote = "from USD_NIGHTLY_BUDGET";
+    } else log(`ignoring invalid USD_NIGHTLY_BUDGET '${process.env.USD_NIGHTLY_BUDGET}'`);
+  }
+  log(`USD nightly slice ${usdBudget.toFixed(4)} (balance ${usd.toFixed(4)}, ${sliceNote})`);
+
+  let usdImages = 0;
+  if (usdBudget > 0) {
+    usdImages = await burnPool({ pool: "USD", budget: usdBudget, costs, promptFiles: await promptPool(), nextEpoch });
+  }
+
+  if (!DRY_RUN) {
+    try {
+      state.last_usd = (await fetchBalance()).usd;
+    } catch {
+      state.last_usd = usd; // pre-run reading — still good enough for grant detection
+    }
+    await writeState(state);
+  }
+
+  log(`run complete · ${diemImages} DIEM image(s) + ${usdImages} USD image(s)`);
 }
 
 main().catch((err) => {
