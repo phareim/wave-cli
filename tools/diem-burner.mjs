@@ -36,17 +36,15 @@ const VENICE_BIN = path.join(HOME, ".npm-global/bin/venice");
 const RATE_LIMITS_URL = "https://api.venice.ai/api/v1/api_keys/rate_limits";
 const MODELS_URL = "https://api.venice.ai/api/v1/models?type=image";
 
-// Seedream-heavy mix; gpt-image-2 runs at LOW quality (0.02 DIEM at 1K vs
-// 0.26 at its default high) and soaks up the budget tail seedream (0.06)
-// can no longer afford.
-const SEEDREAM = "seedream-v5-pro";
+// All gpt-image-2 (switched from seedream-v5-pro 2026-08-01), always at LOW
+// quality (0.02 DIEM at 1K vs 0.26 at the model's default high) — Petter
+// never found the higher tiers visibly better, and low stretches the budget.
 const GPT_IMAGE = "gpt-image-2";
 const GPT_QUALITY = "low";
 // Aspect ratios to pull a random format from per image. Configurable via
 // DIEM_BURNER_FORMATS in the env file (comma-separated, e.g. "2:3,3:2").
-// Both target models are resolution-tier priced and IGNORE width/height —
-// without an explicit `--resolution 1K` seedream-v5-pro bills its 2K default
-// (0.11 observed vs 0.06 at 1K), so the tier is always pinned.
+// gpt-image-2 is resolution-tier priced and IGNORES width/height — the tier
+// is always pinned to 1K so it never bills a pricier default.
 const DEFAULT_FORMATS = ["9:16"];
 const RESOLUTION = "1K";
 
@@ -98,29 +96,15 @@ async function fetchBalance() {
   return { diem, usd, nextEpoch: new Date(nextEpoch) };
 }
 
-// DIEM price of one generation at the settings we send (1K where tiered,
-// low quality where quality-priced — i.e. gpt-image-2).
-function modelCost(spec) {
-  const pricing = spec?.model_spec?.pricing;
-  return (
-    pricing?.quality?.["1K"]?.[GPT_QUALITY]?.diem ??
-    pricing?.generation?.diem ??
-    pricing?.resolutions?.["1K"]?.diem ??
-    null
-  );
-}
-
-async function fetchModelCosts() {
+// DIEM price of one gpt-image-2 generation at the settings we send (1K,
+// low quality), from the live Venice catalog.
+async function fetchImageCost() {
   const json = await veniceGet(MODELS_URL);
-  const costs = {};
-  for (const m of json?.data || []) {
-    const cost = modelCost(m);
-    if (cost !== null) costs[m.id] = cost;
-  }
-  for (const id of [SEEDREAM, GPT_IMAGE]) {
-    if (!(id in costs)) throw new Error(`model '${id}' not in the live Venice image catalog — refusing to run`);
-  }
-  return costs;
+  const spec = (json?.data || []).find((m) => m.id === GPT_IMAGE);
+  if (!spec) throw new Error(`model '${GPT_IMAGE}' not in the live Venice image catalog — refusing to run`);
+  const diem = spec?.model_spec?.pricing?.quality?.[RESOLUTION]?.[GPT_QUALITY]?.diem;
+  if (typeof diem !== "number") throw new Error(`no ${RESOLUTION} ${GPT_QUALITY} price for '${GPT_IMAGE}' in the live catalog — refusing to run`);
+  return diem;
 }
 
 // Directories that never hold usable prompts: the archive, the output dump,
@@ -152,10 +136,9 @@ async function promptPool() {
   return files;
 }
 
-function runVenice(promptFile, model, format) {
+function runVenice(promptFile, format) {
   return new Promise((resolve) => {
-    const cliArgs = ["--prompt", promptFile, "--model", model, "--format", format, "--resolution", RESOLUTION, "--aiwdm-tags", "diem-burner"];
-    if (model === GPT_IMAGE) cliArgs.push("--quality", GPT_QUALITY);
+    const cliArgs = ["--prompt", promptFile, "--model", GPT_IMAGE, "--format", format, "--resolution", RESOLUTION, "--quality", GPT_QUALITY, "--aiwdm-tags", "diem-burner"];
     const child = spawn(VENICE_BIN, cliArgs, {
       stdio: "inherit",
       env: {
@@ -209,10 +192,7 @@ const minutesUntil = (date) => (date.getTime() - Date.now()) / 60000;
 // affects logging and which balance field the post-image re-read tracks —
 // Venice prices every model identically in both currencies. Returns the
 // number of images generated.
-async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
-  const seedreamCost = costs[SEEDREAM];
-  const gptCost = costs[GPT_IMAGE];
-  const minCost = Math.min(seedreamCost, gptCost);
+async function burnPool({ pool, budget, imageCost, promptFiles, nextEpoch }) {
   const startBudget = budget;
   let images = 0;
   let consecutiveFailures = 0;
@@ -229,8 +209,8 @@ async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
   }
 
   while (images < MAX_IMAGES) {
-    if (budget < minCost) {
-      log(`[${pool}] budget ${budget.toFixed(4)} below the cheapest image (${minCost}) — done`);
+    if (budget < imageCost) {
+      log(`[${pool}] budget ${budget.toFixed(4)} below one image (${imageCost}) — done`);
       break;
     }
     if (minutesUntil(nextEpoch) < CUTOFF_MINUTES) {
@@ -238,25 +218,22 @@ async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
       break;
     }
 
-    // Seedream while the budget covers it; gpt-image-2 at low quality soaks
-    // up the tail below one seedream image.
-    const model = budget >= seedreamCost ? SEEDREAM : GPT_IMAGE;
     const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
     const promptFile = promptFiles[poolIdx % promptFiles.length];
     poolIdx++;
 
     if (DRY_RUN) {
-      log(`[${pool}] dry-run: would generate ${model} ${format} from ${path.basename(promptFile)} (est. ${costs[model]}, budget ${budget.toFixed(4)})`);
-      budget -= costs[model];
+      log(`[${pool}] dry-run: would generate ${GPT_IMAGE} ${GPT_QUALITY} ${format} from ${path.basename(promptFile)} (est. ${imageCost}, budget ${budget.toFixed(4)})`);
+      budget -= imageCost;
       images++;
       continue;
     }
 
-    log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${model} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
-    const exitCode = await runVenice(promptFile, model, format);
+    log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${GPT_IMAGE} ${GPT_QUALITY} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
+    const exitCode = await runVenice(promptFile, format);
 
     // The real charge comes from re-reading the balance, not from the estimate.
-    let after = budget - costs[model];
+    let after = budget - imageCost;
     try {
       const balances = await fetchBalance();
       if (pool === "DIEM") {
@@ -273,7 +250,8 @@ async function burnPool({ pool, budget, costs, promptFiles, nextEpoch }) {
       ts: new Date().toISOString(),
       pool,
       prompt_file: promptFile,
-      model,
+      model: GPT_IMAGE,
+      quality: GPT_QUALITY,
       format,
       budget_before: Number(budget.toFixed(4)),
       budget_after: Number(after.toFixed(4)),
@@ -324,10 +302,8 @@ async function main() {
     return;
   }
 
-  const costs = await fetchModelCosts();
-  const seedreamCost = costs[SEEDREAM];
-  const gptCost = costs[GPT_IMAGE];
-  log(`live pricing · ${SEEDREAM} ${seedreamCost} DIEM (1K) · ${GPT_IMAGE} ~${gptCost} DIEM (1K ${GPT_QUALITY})`);
+  const imageCost = await fetchImageCost();
+  log(`live pricing · ${GPT_IMAGE} ${imageCost} DIEM (${RESOLUTION} ${GPT_QUALITY})`);
 
   const promptFiles = await promptPool();
   if (promptFiles.length === 0) {
@@ -336,7 +312,7 @@ async function main() {
   }
   log(`${promptFiles.length} prompt files in the pool`);
 
-  const diemImages = await burnPool({ pool: "DIEM", budget: diem, costs, promptFiles, nextEpoch });
+  const diemImages = await burnPool({ pool: "DIEM", budget: diem, imageCost, promptFiles, nextEpoch });
 
   // Learn the billing-cycle reset day by spotting the monthly grant landing
   // (USD balance jumped up since the last run).
@@ -376,7 +352,7 @@ async function main() {
 
   let usdImages = 0;
   if (usdBudget > 0) {
-    usdImages = await burnPool({ pool: "USD", budget: usdBudget, costs, promptFiles: await promptPool(), nextEpoch });
+    usdImages = await burnPool({ pool: "USD", budget: usdBudget, imageCost, promptFiles: await promptPool(), nextEpoch });
   }
 
   if (!DRY_RUN) {

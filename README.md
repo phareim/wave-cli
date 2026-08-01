@@ -157,8 +157,8 @@ Venice's daily DIEM allowance expires at 00:00 UTC. `tools/diem-burner.mjs` runs
 
 - Checks the live balance via `GET /api_keys/rate_limits`; unless `--force`, it exits quietly when more than 100 minutes remain before the epoch — so a stray manual/boot-time run can't burn the *new* day's budget.
 - Picks random prompts from `~/prompts/**/*.txt` — all subfolders except `old/`, `short/`, and `images/` (plus dotdirs/`node_modules`) — with no repeats within a run, and shells out to `venice --prompt <file> --model <id> --format <ratio> --resolution 1K --aiwdm-tags diem-burner`, so every image auto-uploads to aiwdm tagged `venice, <model>, diem-burner`. The format is drawn at random per image from `DIEM_BURNER_FORMATS` in the env file (comma-separated aspect ratios; currently `9:16`); `--resolution 1K` is pinned because tier-priced models otherwise bill their *default* tier (seedream-v5-pro defaults to 2K: 0.11 instead of 0.06 — verified empirically).
-- Model mix: `seedream-v5-pro` (0.06 at 1K) while the budget covers it; `gpt-image-2` at **low quality** (0.02 at 1K, vs 0.26 at its default high) soaks up the tail below one seedream image, so runs burn down to < 0.02 left. Pricing is read live from `/models?type=image`, and the *actual* charge is taken from a balance re-read after each generation.
-- Stops when the budget drops below one seedream image, at 12 images per pool, within 5 minutes of the epoch, or after two consecutive `venice` failures.
+- Model: every image is `gpt-image-2` at **low quality** (0.02 at 1K, vs 0.26 at its default high) — switched from the seedream-v5-pro mix 2026-08-01; the quality tiers never looked visibly different, and low stretches the budget. Pricing is read live from `/models?type=image`, and the *actual* charge is taken from a balance re-read after each generation.
+- Stops when the budget drops below one image, at 12 images per pool, within 5 minutes of the epoch, or after two consecutive `venice` failures.
 
 ### USD phase — the monthly subscription credits
 
