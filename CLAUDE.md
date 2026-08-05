@@ -65,8 +65,9 @@ wavespeed/  index.js, cli.js, config.js, models.js (hardcoded modelEndpoints + a
 xai/        index.js, cli.js, config.js — direct x.ai images/generations ("imagine")
 tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history),
             random-art.mjs (random-prompt dispatcher, see "random-art" below),
-            diem-burner.mjs (nightly leftover-DIEM spender; no bin entry — run by the
-            diem-burner.timer systemd user unit, see README "DIEM burner")
+            diem-burner.mjs (nightly leftover-DIEM spender; prompts from the aiwdm D1
+            (score >= 7, > 40 chars) with ~/prompts as fallback; no bin entry — run by
+            the diem-burner.timer systemd user unit, see README "DIEM burner")
 ```
 
 ### CLI Entry Points (package.json bin)

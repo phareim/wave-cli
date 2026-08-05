@@ -2,10 +2,16 @@
 
 // diem-burner — spend the day's leftover Venice DIEM on artwork before it
 // expires at the daily epoch (00:00 UTC), then drip a slice of the monthly
-// USD credit balance the same way. Picks random prompt files from
-// ~/prompts/*.txt and shells out to the `venice` CLI, which generates and
-// auto-uploads to aiwdm. Runs nightly via the diem-burner.timer systemd
-// user unit; secrets come from ~/.config/diem-burner/env.
+// USD credit balance the same way. Prompts come from the aiwdm library
+// itself: a random selection over every item (image or video) with score
+// >= 7 whose prompt text (metadata.prompt, else the description — for the
+// Grok-export rows the description IS the original prompt) is longer than
+// 40 chars, fetched from the aiwdm D1 via wrangler. If that query fails or
+// returns nothing, falls back to random ~/prompts/*.txt files as before.
+// Shells out to the `venice` CLI, which generates and auto-uploads to
+// aiwdm. Runs nightly via the diem-burner.timer systemd user unit; secrets
+// come from ~/.config/diem-burner/env (incl. CLOUDFLARE_API_TOKEN for the
+// D1 query — the systemd unit doesn't read ~/.zshrc).
 //
 // The USD pool is Venice's monthly subscription credits (use-it-or-lose-it
 // at the billing cycle). Each night spends balance ÷ days-until-cycle-reset,
@@ -35,6 +41,15 @@ const VENICE_BIN = path.join(HOME, ".npm-global/bin/venice");
 
 const RATE_LIMITS_URL = "https://api.venice.ai/api/v1/api_keys/rate_limits";
 const MODELS_URL = "https://api.venice.ai/api/v1/models?type=image";
+
+// aiwdm prompt pool: query the library's D1 through the wrangler install in
+// the aiwdm worker dir. Thresholds overridable via the env file.
+const AIWDM_WORKER_DIR = path.join(HOME, "github/aiwdm/worker");
+const WRANGLER_BIN = path.join(AIWDM_WORKER_DIR, "node_modules/.bin/wrangler");
+const AIWDM_DB = "aiwdm-db";
+const DEFAULT_MIN_SCORE = 7;
+const DEFAULT_MIN_PROMPT_CHARS = 40;
+const WRANGLER_TIMEOUT_MS = 60_000; // a hung query must not eat the burn window
 
 // All gpt-image-2 (switched from seedream-v5-pro 2026-08-01), always at LOW
 // quality (0.02 DIEM at 1K vs 0.26 at the model's default high) — Petter
@@ -126,19 +141,83 @@ async function collectPromptFiles(dir) {
   return files;
 }
 
-async function promptPool() {
-  const files = await collectPromptFiles(PROMPTS_DIR);
+function shuffle(arr) {
   // Fisher–Yates; no repeats within a run until the pool is exhausted.
-  for (let i = files.length - 1; i > 0; i--) {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [files[i], files[j]] = [files[j], files[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  return files;
+  return arr;
 }
 
-function runVenice(promptFile, format) {
+// Pool entries are { promptArg, label, source }: promptArg is what goes to
+// `venice --prompt` (literal text for aiwdm rows, a file path for the
+// fallback), label is for logs.
+async function fetchAiwdmPrompts(minScore, minChars) {
+  const sql = `SELECT ref, prompt, score FROM (
+    SELECT 'i' || id AS ref, COALESCE(json_extract(metadata, '$.prompt'), description) AS prompt, score FROM images
+    UNION ALL
+    SELECT 'v' || id AS ref, COALESCE(json_extract(metadata, '$.prompt'), description) AS prompt, score FROM videos
+  ) WHERE score >= ${minScore} AND prompt IS NOT NULL AND length(trim(prompt)) > ${minChars}`;
+
+  const stdout = await new Promise((resolve, reject) => {
+    const child = spawn(WRANGLER_BIN, ["d1", "execute", AIWDM_DB, "--remote", "--json", "--command", sql], {
+      cwd: AIWDM_WORKER_DIR,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
+    let out = "", errOut = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (errOut += d));
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`wrangler d1 execute timed out after ${WRANGLER_TIMEOUT_MS / 1000}s`));
+    }, WRANGLER_TIMEOUT_MS);
+    child.on("error", (err) => { clearTimeout(timer); reject(err); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out);
+      else reject(new Error(`wrangler d1 execute exited ${code}: ${errOut.trim().slice(0, 300)}`));
+    });
+  });
+
+  // wrangler --json prints a JSON array; tolerate any banner noise before it.
+  const jsonStart = stdout.indexOf("[");
+  if (jsonStart === -1) throw new Error("no JSON in wrangler output");
+  const rows = JSON.parse(stdout.slice(jsonStart))?.[0]?.results ?? [];
+
+  const seen = new Set();
+  const entries = [];
+  for (const r of rows) {
+    const text = String(r.prompt).trim();
+    if (seen.has(text)) continue; // near-duplicate uploads share descriptions
+    seen.add(text);
+    entries.push({ promptArg: text, label: `aiwdm:${r.ref} (score ${r.score})`, source: "aiwdm" });
+  }
+  return entries;
+}
+
+async function filePromptPool() {
+  const files = await collectPromptFiles(PROMPTS_DIR);
+  return files.map((f) => ({ promptArg: f, label: path.basename(f), source: "file" }));
+}
+
+// aiwdm first; the ~/prompts file pool only as fallback so a Cloudflare
+// hiccup never kills an unattended burn night.
+async function promptPool(minScore, minChars) {
+  try {
+    const entries = await fetchAiwdmPrompts(minScore, minChars);
+    if (entries.length > 0) return shuffle(entries);
+    log(`aiwdm pool empty (score >= ${minScore}, > ${minChars} chars) — falling back to ${PROMPTS_DIR}`);
+  } catch (err) {
+    log(`aiwdm prompt query failed (${err.message}) — falling back to ${PROMPTS_DIR}`);
+  }
+  return shuffle(await filePromptPool());
+}
+
+function runVenice(promptArg, format) {
   return new Promise((resolve) => {
-    const cliArgs = ["--prompt", promptFile, "--model", GPT_IMAGE, "--format", format, "--resolution", RESOLUTION, "--quality", GPT_QUALITY, "--aiwdm-tags", "diem-burner"];
+    const cliArgs = ["--prompt", promptArg, "--model", GPT_IMAGE, "--format", format, "--resolution", RESOLUTION, "--quality", GPT_QUALITY, "--aiwdm-tags", "diem-burner"];
     const child = spawn(VENICE_BIN, cliArgs, {
       stdio: "inherit",
       env: {
@@ -192,7 +271,7 @@ const minutesUntil = (date) => (date.getTime() - Date.now()) / 60000;
 // affects logging and which balance field the post-image re-read tracks —
 // Venice prices every model identically in both currencies. Returns the
 // number of images generated.
-async function burnPool({ pool, budget, imageCost, promptFiles, nextEpoch }) {
+async function burnPool({ pool, budget, imageCost, prompts, nextEpoch }) {
   const startBudget = budget;
   let images = 0;
   let consecutiveFailures = 0;
@@ -219,18 +298,18 @@ async function burnPool({ pool, budget, imageCost, promptFiles, nextEpoch }) {
     }
 
     const format = FORMATS[Math.floor(Math.random() * FORMATS.length)];
-    const promptFile = promptFiles[poolIdx % promptFiles.length];
+    const entry = prompts[poolIdx % prompts.length];
     poolIdx++;
 
     if (DRY_RUN) {
-      log(`[${pool}] dry-run: would generate ${GPT_IMAGE} ${GPT_QUALITY} ${format} from ${path.basename(promptFile)} (est. ${imageCost}, budget ${budget.toFixed(4)})`);
+      log(`[${pool}] dry-run: would generate ${GPT_IMAGE} ${GPT_QUALITY} ${format} from ${entry.label} (est. ${imageCost}, budget ${budget.toFixed(4)})`);
       budget -= imageCost;
       images++;
       continue;
     }
 
-    log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${GPT_IMAGE} ${GPT_QUALITY} · ${format} · ${path.basename(promptFile)} · budget ${budget.toFixed(4)}`);
-    const exitCode = await runVenice(promptFile, format);
+    log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${GPT_IMAGE} ${GPT_QUALITY} · ${format} · ${entry.label} · budget ${budget.toFixed(4)}`);
+    const exitCode = await runVenice(entry.promptArg, format);
 
     // The real charge comes from re-reading the balance, not from the estimate.
     let after = budget - imageCost;
@@ -249,7 +328,9 @@ async function burnPool({ pool, budget, imageCost, promptFiles, nextEpoch }) {
     await appendLog({
       ts: new Date().toISOString(),
       pool,
-      prompt_file: promptFile,
+      prompt_source: entry.source,
+      prompt_ref: entry.label,
+      prompt_excerpt: entry.source === "aiwdm" ? entry.promptArg.slice(0, 120) : undefined,
       model: GPT_IMAGE,
       quality: GPT_QUALITY,
       format,
@@ -261,7 +342,7 @@ async function burnPool({ pool, budget, imageCost, promptFiles, nextEpoch }) {
     if (exitCode === 2) {
       // venice exit 2 = prompt blocked by moderation — skip this prompt, but
       // it's not an infrastructure failure, so don't count it toward abort.
-      log(`[${pool}] prompt blocked by Venice moderation — skipping ${path.basename(promptFile)}`);
+      log(`[${pool}] prompt blocked by Venice moderation — skipping ${entry.label}`);
       consecutiveFailures = 0;
     } else if (exitCode !== 0) {
       consecutiveFailures++;
@@ -305,14 +386,17 @@ async function main() {
   const imageCost = await fetchImageCost();
   log(`live pricing · ${GPT_IMAGE} ${imageCost} DIEM (${RESOLUTION} ${GPT_QUALITY})`);
 
-  const promptFiles = await promptPool();
-  if (promptFiles.length === 0) {
-    console.error(`[diem-burner] no .txt prompt files found in ${PROMPTS_DIR}`);
+  const minScore = Number(process.env.AIWDM_MIN_SCORE) >= 1 ? Number(process.env.AIWDM_MIN_SCORE) : DEFAULT_MIN_SCORE;
+  const minChars = Number(process.env.AIWDM_MIN_PROMPT_CHARS) >= 1 ? Number(process.env.AIWDM_MIN_PROMPT_CHARS) : DEFAULT_MIN_PROMPT_CHARS;
+
+  const prompts = await promptPool(minScore, minChars);
+  if (prompts.length === 0) {
+    console.error(`[diem-burner] no prompts: aiwdm pool unavailable and no .txt files in ${PROMPTS_DIR}`);
     process.exit(1);
   }
-  log(`${promptFiles.length} prompt files in the pool`);
+  log(`${prompts.length} prompt(s) in the pool (source: ${prompts[0].source})`);
 
-  const diemImages = await burnPool({ pool: "DIEM", budget: diem, imageCost, promptFiles, nextEpoch });
+  const diemImages = await burnPool({ pool: "DIEM", budget: diem, imageCost, prompts, nextEpoch });
 
   // Learn the billing-cycle reset day by spotting the monthly grant landing
   // (USD balance jumped up since the last run).
@@ -352,7 +436,7 @@ async function main() {
 
   let usdImages = 0;
   if (usdBudget > 0) {
-    usdImages = await burnPool({ pool: "USD", budget: usdBudget, imageCost, promptFiles: await promptPool(), nextEpoch });
+    usdImages = await burnPool({ pool: "USD", budget: usdBudget, imageCost, prompts: shuffle([...prompts]), nextEpoch });
   }
 
   if (!DRY_RUN) {
