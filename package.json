@@ -13,11 +13,12 @@
     "wave-balance": "./tools/balance.js",
     "wave-history": "./tools/history.js",
     "random-art": "./tools/random-art.mjs",
-    "wan2.6-flash": "./venice/wan26-flash.js"
+    "wan2.6-flash": "./venice/wan26-flash.js",
+    "chart-art": "./tools/chart-art.mjs"
   },
   "type": "module",
   "scripts": {
-    "test": "node --test tests/smoke.test.js tests/random-art.test.js"
+    "test": "node --test tests/smoke.test.js tests/random-art.test.js tests/chart-art.test.js"
   },
   "keywords": [
     "venice",

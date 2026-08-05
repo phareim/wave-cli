@@ -1,0 +1,60 @@
+{
+  "items": [
+    {
+      "id": 101,
+      "nsfwLevel": "None",
+      "baseModel": "ZImageTurbo",
+      "username": "alice",
+      "stats": { "likeCount": 900, "heartCount": 300 },
+      "meta": {
+        "prompt": "A hyperrealistic macro photograph of a green tree frog perched on a wet mossy branch in the rain forest"
+      }
+    },
+    {
+      "id": 102,
+      "nsfwLevel": "Soft",
+      "baseModel": "Illustrious",
+      "username": "bob",
+      "stats": { "likeCount": 500, "heartCount": 200 },
+      "meta": {
+        "prompt": "score_9, score_8_up, masterpiece, best quality, absurdres, (extremely detailed:1.4), <lora:styleX:1>, 1girl, solo, red dress, rooftop at dusk, wind in her hair"
+      }
+    },
+    {
+      "id": 103,
+      "nsfwLevel": "Mature",
+      "baseModel": "Pony",
+      "username": "carol",
+      "stats": { "likeCount": 120, "heartCount": 40 },
+      "meta": {
+        "prompt": "((dramatic lighting)), a knight in ornate silver armor kneeling in a ruined cathedral, [faint fog], BREAK shafts of light through broken stained glass"
+      }
+    },
+    {
+      "id": 104,
+      "nsfwLevel": "None",
+      "baseModel": "Krea 2",
+      "username": "dave",
+      "stats": { "likeCount": 80, "heartCount": 10 },
+      "meta": { "prompt": "short prompt" }
+    },
+    {
+      "id": 105,
+      "nsfwLevel": "None",
+      "baseModel": "ZImageTurbo",
+      "username": "erin",
+      "stats": { "likeCount": 60, "heartCount": 5 },
+      "meta": {
+        "prompt": "A hyperrealistic macro photograph of a green tree frog perched on a wet mossy branch in the rain forest"
+      }
+    },
+    {
+      "id": 106,
+      "nsfwLevel": "X",
+      "baseModel": "Flux",
+      "username": "frank",
+      "stats": { "likeCount": 40, "heartCount": 2 },
+      "meta": null
+    }
+  ]
+}

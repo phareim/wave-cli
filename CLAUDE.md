@@ -45,6 +45,9 @@ lib/
 │                    # never overrides ambient env), collectPromptFiles (recursive .txt,
 │                    # EXCLUDED_DIRS), shuffle. diem-burner.mjs intentionally keeps its
 │                    # own byte-identical copies — see the module header before migrating.
+├── civitai.js       # chart-art's Civitai plumbing: fetchChart (public API, withMeta=true
+│                    # is load-bearing — meta is null without it), stripSdSyntax (lora/
+│                    # weights/boilerplate removal), aiwdmRatingFor (nsfwLevel → rating)
 └── venice-video.js  # Venice /video/queue + /video/retrieve polling core (content-type
                      # flip to video/mp4 is the completion signal), saveVideo,
                      # resolveImageInput (local file → base64 data URI), isHttpUrl
@@ -65,6 +68,7 @@ wavespeed/  index.js, cli.js, config.js, models.js (hardcoded modelEndpoints + a
 xai/        index.js, cli.js, config.js — direct x.ai images/generations ("imagine")
 tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history),
             random-art.mjs (random-prompt dispatcher, see "random-art" below),
+            chart-art.mjs (Civitai top-reacted-prompts dispatcher, see "chart-art" below),
             diem-burner.mjs (nightly leftover-DIEM spender; prompts from the aiwdm D1
             (score >= 7, > 40 chars) with ~/prompts as fallback; no bin entry — run by
             the diem-burner.timer systemd user unit, see README "DIEM burner")
@@ -82,6 +86,7 @@ tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave
 - `wave-balance` → `tools/balance.js`
 - `wave-history` → `tools/history.js`
 - `random-art` → `tools/random-art.mjs`
+- `chart-art` → `tools/chart-art.mjs`
 
 ### random-art (`tools/random-art.mjs`)
 
@@ -103,6 +108,21 @@ shuffle-without-replacement), `--gpt`, `--prompt <file>`, `--list`, `--dry-run`.
 - **diem-burner shares no code with it** by design: the burner keeps its own copies of the
   pool helpers (it spends real money unattended) — don't migrate it to `lib/prompt-pool.js`
   without a supervised nightly run.
+
+### chart-art (`tools/chart-art.mjs`)
+
+random-art's sibling with Civitai as the prompt source: `lib/civitai.js:fetchChart` pulls
+the "Most Reactions" chart (public API, no auth; `withMeta=true` or every `meta` is null),
+strips SD syntax (`stripSdSyntax`), filters to > 40 chars post-strip, dedupes, then spawns
+the same in-repo children with `--prompt <literal text>` + `--aiwdm-tags chart-art` +
+`--aiwdm-rating <mapped>` (nsfwLevel None→PG, Soft→PG13, Mature/X→R via `aiwdmRatingFor`).
+Flags beyond random-art's: `--period day|week|month|year|all`, `--nsfw soft|mature|x`
+(default SFW), `--min-likes`, `--limit` (API max 200), `-i` (readline top-20 picker,
+single pick), `--rewrite` (Venice chat natural-language rewrite via
+`lib/prompts.js:rewriteAsNaturalLanguage`; falls back to the stripped prompt on failure).
+Test seams (`tests/chart-art.test.js` + `tests/fixtures/civitai-chart.json`):
+`CHART_ART_FIXTURE` replaces the fetch, `CHART_ART_CHILD` the child, `HOME` the env file;
+interactive mode is tested by piping the pick number on stdin.
 
 ### Output language (lib/ui.js)
 

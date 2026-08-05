@@ -32,6 +32,7 @@ Unified command-line tools for AI image and video generation: **Venice.ai**, **W
 | `wave-balance` | Show current Venice + Wavespeed account balances |
 | `wave-history` | Browse Wavespeed prediction history (~7 days); `--upload` publishes completed outputs to aiwdm with a duplicate check |
 | `random-art` | Images from random `~/prompts/**/*.txt` files (the diem-burner pool). Venice + seedream-v5-pro at 1K by default; `--count N` generates N artworks with a fresh prompt + format each, `--gpt` → gpt-image-2 (low quality), `--wave` → WaveSpeed, `--prompt <file>` pins the file, `--list` prints the pool, `--dry-run` prints the picks — see "Random art" below |
+| `chart-art` | Images from Civitai's top-reacted prompts. Fetches the "Most Reactions" chart (SFW by default, `--nsfw soft\|mature\|x`, `--period day\|week\|month\|year\|all`), strips SD tag syntax, maps Civitai's nsfwLevel to the aiwdm rating; `-i` picks interactively, `--rewrite` turns tag soup into natural language — see "Chart art" below |
 | `tools/diem-burner.mjs` | Nightly job (not a bin): spends leftover Venice DIEM + a slice of the monthly USD credits on random high-scored aiwdm prompts (score ≥ 7, > 40 chars; `~/prompts/*.txt` as fallback) before the 00:00 UTC epoch reset — see "DIEM burner" below |
 
 ## Environment variables
@@ -150,6 +151,23 @@ random-art --count 5 --dry-run             # show the five picks + commands, gen
 ```
 
 Every image auto-uploads to aiwdm tagged `random-art` (vs the burner's `diem-burner`). Exit codes: 0 ok, 1 failure, 2 prompt blocked by Venice moderation. With `--count > 1` a failure or moderation block doesn't abort the batch — a `● N generated · N blocked · N failed` footer sums it up, and the exit code is 1 only if something actually failed.
+
+## Chart art — generate from Civitai's top-reacted prompts
+
+`chart-art` pulls the "Most Reactions" chart from Civitai's public image API and generates from those prompts — fresh outside ideas instead of the local pools. No API key needed; the `withMeta=true` query parameter is load-bearing (without it every item's `meta` is null). Same dispatcher shape and env file as `random-art` (Venice + seedream-v5-pro at 1K default, `--gpt` → gpt-image-2 low, `--wave` → WaveSpeed).
+
+```bash
+chart-art                            # one image from a random top-of-the-week prompt (SFW chart)
+chart-art -i                         # pick from a numbered top-20 list (likes♥hearts, nsfw, base model, excerpt)
+chart-art --period day --count 3     # three images from today's chart, no repeats until exhausted
+chart-art --rewrite                  # rewrite the stripped tags into natural language via Venice chat first
+chart-art --nsfw mature --min-likes 200 --list   # inspect a filtered Mature chart, generate nothing
+```
+
+- **Prompt cleanup:** every prompt is stripped of Stable Diffusion syntax before use — `<lora:…>` tags, `(word:1.4)` weights, `((emphasis))`/`[brackets]`, `BREAK`, and boilerplate quality tokens (`score_9`, `masterpiece`, `best quality`, `8k`, …). Only prompts still longer than 40 chars survive; exact duplicates are deduped. `--rewrite` additionally runs the cleaned prompt through Venice chat (rating-aware) into one natural-language paragraph — recommended for tag-soup prompts on natural-language models; on rewrite failure the stripped prompt is used with a warning.
+- **Rating mapping:** Civitai's `nsfwLevel` becomes the aiwdm upload rating — None→PG, Soft→PG13, Mature/X→R (unknown→R). The pick line shows it: `⚄ civitai:<id> · 398♥115 · None→PG · 9:16`.
+- Uploads are tagged `chart-art` (vs `random-art` / `diem-burner`). Exit codes and `--count` batch semantics match `random-art` exactly (0 ok, 1 failure, 2 moderation-blocked; batches continue through blocks).
+- Test seams: `CHART_ART_FIXTURE=<json>` replaces the API fetch, `CHART_ART_CHILD=<script>` replaces the spawned generator.
 
 ## DIEM burner — spend leftover Venice DIEM nightly
 
