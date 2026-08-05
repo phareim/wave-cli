@@ -61,23 +61,40 @@ test("stripSdSyntax leaves clean natural-language prompts untouched", () => {
   assert.equal(stripSdSyntax(clean), clean);
 });
 
-test("aiwdmRatingFor maps nsfw levels, failing safe to R", () => {
-  assert.equal(aiwdmRatingFor("None"), "PG");
-  assert.equal(aiwdmRatingFor("Soft"), "PG13");
-  assert.equal(aiwdmRatingFor("Mature"), "R");
-  assert.equal(aiwdmRatingFor("X"), "R");
+test("aiwdmRatingFor maps browsingLevels, failing safe to R", () => {
+  assert.equal(aiwdmRatingFor(1), "PG");
+  assert.equal(aiwdmRatingFor(2), "PG13");
+  assert.equal(aiwdmRatingFor(4), "R");
+  assert.equal(aiwdmRatingFor(8), "R");
+  assert.equal(aiwdmRatingFor(16), "R");
   assert.equal(aiwdmRatingFor(undefined), "R");
 });
 
 test("fetchChart cleans, filters short/no-meta, and dedupes", async () => {
   process.env.CHART_ART_FIXTURE = FIXTURE;
   try {
-    const entries = await fetchChart({ period: "week" });
+    const entries = await fetchChart({ period: "week", maxRating: "xxx" });
     assert.equal(entries.length, 3); // 104 too short, 105 duplicate, 106 no meta
     assert.deepEqual(entries.map((e) => e.id), [101, 102, 103]);
     assert.equal(entries[1].prompt, "1girl, solo, red dress, rooftop at dusk, wind in her hair");
     assert.equal(entries[0].likes, 900);
     assert.equal(entries[0].pageUrl, "https://civitai.com/images/101");
+    assert.deepEqual(entries.map((e) => e.levelLabel), ["PG", "PG13", "R"]);
+  } finally {
+    delete process.env.CHART_ART_FIXTURE;
+  }
+});
+
+test("fetchChart filters on the browsingLevel range", async () => {
+  process.env.CHART_ART_FIXTURE = FIXTURE;
+  try {
+    assert.deepEqual((await fetchChart({})).map((e) => e.id), [101]); // default pg ceiling
+    assert.deepEqual(
+      (await fetchChart({ minRating: "pg13", maxRating: "r" })).map((e) => e.id),
+      [102, 103],
+    );
+    await assert.rejects(fetchChart({ minRating: "x", maxRating: "pg" }), /above max rating/);
+    await assert.rejects(fetchChart({ maxRating: "spicy" }), /unknown rating/);
   } finally {
     delete process.env.CHART_ART_FIXTURE;
   }
@@ -86,29 +103,36 @@ test("fetchChart cleans, filters short/no-meta, and dedupes", async () => {
 // --- CLI --------------------------------------------------------------------
 
 test("--list prints the chart with reactions and cleaned prompts", () => {
-  const result = runChart(["--list"]);
+  const result = runChart(["--list", "--max-rating", "r"]);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /civitai · week · SFW/);
+  assert.match(result.stdout, /civitai · week · ≤r/);
   assert.match(result.stdout, /900♥300/);
   assert.match(result.stdout, /1girl, solo, red dress/);
   assert.doesNotMatch(result.stdout, /score_9/);
 });
 
+test("default pg ceiling keeps higher browsingLevels out of the chart", () => {
+  const result = runChart(["--list"]);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /tree frog/);
+  assert.doesNotMatch(result.stdout, /1girl/); // level 2 (PG13) excluded by default
+});
+
 test("--dry-run resolves the child command with mapped aiwdm rating", () => {
   const result = runChart(["--dry-run", "--min-likes", "600", "--format", "9:16"]);
   assert.equal(result.status, 0);
-  // Only entry 101 (900 likes, None) survives min-likes 600.
+  // Only entry 101 (900 likes, level 1) survives min-likes 600.
   assert.match(result.stdout, /civitai:101/);
-  assert.match(result.stdout, /None→PG/);
+  assert.match(result.stdout, /PG→PG/);
   assert.match(result.stdout, /--aiwdm-tags chart-art --aiwdm-rating PG/);
   assert.match(result.stdout, /venice\/index\.js/);
 });
 
 test("interactive pick from stdin drives the choice", () => {
-  const result = runChart(["-i", "--dry-run", "--format", "9:16"], {}, "2\n");
+  const result = runChart(["-i", "--dry-run", "--format", "9:16", "--max-rating", "r"], {}, "2\n");
   assert.equal(result.status, 0);
   assert.match(result.stdout, /civitai:102/);
-  assert.match(result.stdout, /Soft→PG13/);
+  assert.match(result.stdout, /PG13→PG13/);
   assert.match(result.stdout, /--aiwdm-rating PG13/);
 });
 

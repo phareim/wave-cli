@@ -115,10 +115,13 @@ random-art's sibling with Civitai as the prompt source: `lib/civitai.js:fetchCha
 the "Most Reactions" chart (public API, no auth; `withMeta=true` or every `meta` is null),
 strips SD syntax (`stripSdSyntax`), filters to > 40 chars post-strip, dedupes, then spawns
 the same in-repo children with `--prompt <literal text>` + `--aiwdm-tags chart-art` +
-`--aiwdm-rating <mapped>` (nsfwLevel None→PG, Soft→PG13, Mature/X→R via `aiwdmRatingFor`).
-Flags beyond random-art's: `--period day|week|month|year|all`, `--nsfw soft|mature|x`
-(default SFW), `--min-likes`, `--limit` (API max 200), `-i` (readline top-20 picker,
-single pick), `--rewrite` (Venice chat natural-language rewrite via
+`--aiwdm-rating <mapped>`. Ratings use Civitai's browsingLevel numbering (1=PG, 2=PG13,
+4=R, 8=X, 16=XXX): the legacy `nsfw` API param is only a coarse ceiling, so fetchChart
+requests the smallest covering ceiling and filters items exactly on `browsingLevel`;
+`aiwdmRatingFor` maps 1→PG, 2→PG13, ≥4→R for the upload. Flags beyond random-art's:
+`--period day|week|month|year|all`, `--max-rating pg|pg13|r|x|xxx` (default pg),
+`--min-rating` (optional floor), `--min-likes`, `--limit` (API max 200), `-i` (readline
+top-20 picker, single pick), `--rewrite` (Venice chat natural-language rewrite via
 `lib/prompts.js:rewriteAsNaturalLanguage`; falls back to the stripped prompt on failure).
 Test seams (`tests/chart-art.test.js` + `tests/fixtures/civitai-chart.json`):
 `CHART_ART_FIXTURE` replaces the fetch, `CHART_ART_CHILD` the child, `HOME` the env file;

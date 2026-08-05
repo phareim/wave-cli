@@ -4,8 +4,9 @@
 // the "Most Reactions" chart from the public Civitai API (lib/civitai.js),
 // strips Stable Diffusion syntax from each prompt, then spawns the in-repo
 // venice/wavespeed CLI once per generation — the same thin-dispatcher shape
-// as random-art. Civitai's nsfwLevel maps to the aiwdm rating (None→PG,
-// Soft→PG13, Mature/X→R).
+// as random-art. Rating filters use Civitai's browsingLevel numbering
+// (pg/pg13/r/x/xxx), which also maps to the aiwdm upload rating
+// (PG→PG, PG13→PG13, R and up→R).
 //
 // Test seams: CHART_ART_FIXTURE replaces the API fetch with a JSON file,
 // CHART_ART_CHILD replaces the spawned child script.
@@ -20,7 +21,7 @@ import * as ui from "../lib/ui.js";
 import { c, truncate, fmtDuration } from "../lib/ui.js";
 import { parseFormat, NAMED_RATIOS } from "../lib/format.js";
 import { loadEnvFile, shuffle } from "../lib/prompt-pool.js";
-import { fetchChart, aiwdmRatingFor, PERIODS, NSFW_LEVELS } from "../lib/civitai.js";
+import { fetchChart, aiwdmRatingFor, PERIODS, BROWSING_LEVELS } from "../lib/civitai.js";
 import { rewriteAsNaturalLanguage } from "../lib/prompts.js";
 
 const HOME = os.homedir();
@@ -56,7 +57,8 @@ Reactions" chart (SFW by default), strips SD tag syntax, and generates via
 Venice + ${SEEDREAM} at 1K (random-art's economics).`,
   )
   .option("--period <p>", `chart window: ${Object.keys(PERIODS).join(", ")}`, "week")
-  .option("--nsfw <level>", `include NSFW charts: ${Object.keys(NSFW_LEVELS).join(", ")} (default: SFW only)`)
+  .option("--max-rating <r>", `highest Civitai rating to include: ${Object.keys(BROWSING_LEVELS).join(", ")}`, "pg")
+  .option("--min-rating <r>", "lowest Civitai rating to include (default: no floor)")
   .option("--min-likes <n>", "only prompts from images with at least this many likes", parseNonNegativeInt, 0)
   .option("--limit <n>", "chart entries to fetch (API max 200)", parsePositiveInt, 100)
   .option("-i, --interactive", `pick the prompt from the top ${PICKER_ROWS} instead of at random`)
@@ -79,7 +81,8 @@ Examples:
   chart-art -i                       pick the prompt yourself from the top ${PICKER_ROWS}
   chart-art --period day --count 3   three images from today's chart
   chart-art --rewrite --gpt          natural-language rewrite, gpt-image-2 low
-  chart-art --nsfw mature --list     inspect the Mature chart, generate nothing
+  chart-art --max-rating r --list    inspect the chart up to R, generate nothing
+  chart-art --min-rating pg13 --max-rating x   only the PG13–X slice
 
 Exit codes: 0 ok · 1 failure · 2 prompt blocked by Venice moderation
 (single run; with --count > 1 moderation skips do not fail the batch)`,
@@ -117,14 +120,14 @@ const reactions = (e) => `${e.likes}♥${e.hearts}`;
 function chartLine(e, index) {
   const num = c.bold(String(index + 1).padStart(2));
   const stats = c.cyan(reactions(e).padEnd(10));
-  const level = c.yellow(e.nsfwLevel.padEnd(6));
+  const level = c.yellow(e.levelLabel.padEnd(6));
   const model = c.dim((e.baseModel || "?").slice(0, 14).padEnd(14));
   return `${num}  ${stats} ${level} ${model} ${truncate(e.prompt, 100)}`;
 }
 
 async function pickInteractively(entries) {
   const top = entries.slice(0, PICKER_ROWS);
-  console.log(c.dim(`     ${"likes♥hearts".padEnd(10)} ${"nsfw".padEnd(6)} ${"base model".padEnd(14)} prompt`));
+  console.log(c.dim(`     ${"likes♥hearts".padEnd(10)} ${"level".padEnd(6)} ${"base model".padEnd(14)} prompt`));
   top.forEach((e, i) => console.log(chartLine(e, i)));
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -146,11 +149,18 @@ async function main() {
     ui.err(`unknown --period '${opts.period}' — valid: ${Object.keys(PERIODS).join(", ")}`);
     process.exit(1);
   }
-  if (opts.nsfw && !NSFW_LEVELS[opts.nsfw]) {
-    ui.err(`unknown --nsfw '${opts.nsfw}' — valid: ${Object.keys(NSFW_LEVELS).join(", ")}`);
+  for (const [flag, value] of [["--max-rating", opts.maxRating], ["--min-rating", opts.minRating]]) {
+    if (value && !BROWSING_LEVELS[value]) {
+      ui.err(`unknown ${flag} '${value}' — valid: ${Object.keys(BROWSING_LEVELS).join(", ")}`);
+      process.exit(1);
+    }
+  }
+  if (opts.minRating && BROWSING_LEVELS[opts.minRating] > BROWSING_LEVELS[opts.maxRating]) {
+    ui.err(`--min-rating ${opts.minRating} is above --max-rating ${opts.maxRating}`);
     process.exit(1);
   }
   await loadEnvFile(ENV_FILE);
+  const ratingNote = opts.minRating ? `${opts.minRating}–${opts.maxRating}` : `≤${opts.maxRating}`;
 
   const formatPool = (process.env.DIEM_BURNER_FORMATS || "")
     .split(",").map((s) => s.trim()).filter(Boolean);
@@ -158,7 +168,7 @@ async function main() {
 
   let entries;
   try {
-    entries = await fetchChart({ period: opts.period, nsfw: opts.nsfw, limit: opts.limit });
+    entries = await fetchChart({ period: opts.period, maxRating: opts.maxRating, minRating: opts.minRating, limit: opts.limit });
   } catch (fetchErr) {
     ui.err(`Civitai chart fetch failed: ${fetchErr.message}`);
     process.exit(1);
@@ -166,16 +176,16 @@ async function main() {
   if (opts.minLikes > 0) entries = entries.filter((e) => e.likes >= opts.minLikes);
   if (entries.length === 0) {
     ui.err(
-      `no usable prompts on the ${opts.period} chart (nsfw: ${opts.nsfw || "SFW"}, min likes ${opts.minLikes}) — prompts must be > 40 chars after SD-syntax stripping`,
+      `no usable prompts on the ${opts.period} chart (ratings ${ratingNote}, min likes ${opts.minLikes}) — prompts must be > 40 chars after SD-syntax stripping`,
     );
     process.exit(1);
   }
 
   if (opts.list) {
     console.log(
-      `${c.cyan("▶")} ${c.bold(`civitai · ${opts.period} · ${opts.nsfw || "SFW"}`)} ${c.dim(`· ${entries.length} prompt${entries.length === 1 ? "" : "s"}`)}`,
+      `${c.cyan("▶")} ${c.bold(`civitai · ${opts.period} · ${ratingNote}`)} ${c.dim(`· ${entries.length} prompt${entries.length === 1 ? "" : "s"}`)}`,
     );
-    console.log(c.dim(`     ${"likes♥hearts".padEnd(10)} ${"nsfw".padEnd(6)} ${"base model".padEnd(14)} prompt`));
+    console.log(c.dim(`     ${"likes♥hearts".padEnd(10)} ${"level".padEnd(6)} ${"base model".padEnd(14)} prompt`));
     entries.forEach((e, i) => console.log(chartLine(e, i)));
     return;
   }
@@ -225,12 +235,12 @@ async function main() {
       entry = pool[poolIdx++];
     }
     const format = opts.format || formats[Math.floor(Math.random() * formats.length)];
-    const rating = aiwdmRatingFor(entry.nsfwLevel);
+    const rating = aiwdmRatingFor(entry.level);
 
     if (count > 1) ui.roundHeader("generation", i + 1, count);
     const poolNote = i === 0 && pool ? ` · chart of ${pool.length}` : "";
     console.log(
-      `${c.magenta("⚄")} ${c.bold(`civitai:${entry.id}`)} ${c.dim(`· ${reactions(entry)} · ${entry.nsfwLevel}→${rating} · ${format}${poolNote}`)}`,
+      `${c.magenta("⚄")} ${c.bold(`civitai:${entry.id}`)} ${c.dim(`· ${reactions(entry)} · ${entry.levelLabel}→${rating} · ${format}${poolNote}`)}`,
     );
     console.log(`  ${c.dim(`"${truncate(entry.prompt, 100)}"`)}`);
 
