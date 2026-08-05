@@ -2,16 +2,26 @@
 
 // diem-burner — spend the day's leftover Venice DIEM on artwork before it
 // expires at the daily epoch (00:00 UTC), then drip a slice of the monthly
-// USD credit balance the same way. Prompts come from the aiwdm library
-// itself: a random selection over every item (image or video) with score
-// >= 7 whose prompt text (metadata.prompt, else the description — for the
-// Grok-export rows the description IS the original prompt) is longer than
-// 40 chars, fetched from the aiwdm D1 via wrangler. If that query fails or
-// returns nothing, falls back to random ~/prompts/*.txt files as before.
-// Shells out to the `venice` CLI, which generates and auto-uploads to
-// aiwdm. Runs nightly via the diem-burner.timer systemd user unit; secrets
-// come from ~/.config/diem-burner/env (incl. CLOUDFLARE_API_TOKEN for the
-// D1 query — the systemd unit doesn't read ~/.zshrc).
+// USD credit balance the same way. Prompts come 50/50 from two sources,
+// interleaved after a per-source shuffle:
+//
+//   1. The aiwdm library itself: every item (image or video) with score
+//      >= 7 whose prompt text (metadata.prompt, else the description — for
+//      the Grok-export rows the description IS the original prompt) is
+//      longer than 40 chars, fetched from the aiwdm D1 via wrangler.
+//   2. Civitai's chart of the day: top-reacted prompts via lib/civitai.js
+//      (limit 200, browsingLevel-filtered, SD syntax stripped). Each picked
+//      civitai prompt is rewritten into natural language at generation time
+//      (lib/prompts.js rewriteAsNaturalLanguage, which tones down directly
+//      sexualized phrasing); on rewrite failure the stripped prompt is used.
+//
+// If one source fails the other carries the night alone; if both fail,
+// random ~/prompts/*.txt files are the last resort. Shells out to the
+// `venice` CLI, which generates and auto-uploads to aiwdm (civitai picks
+// carry their mapped rating: PG/PG13/R). Runs nightly via the
+// diem-burner.timer systemd user unit; secrets come from
+// ~/.config/diem-burner/env (incl. CLOUDFLARE_API_TOKEN for the D1 query
+// and VENICE_API_TOKEN for the rewrite — the unit doesn't read ~/.zshrc).
 //
 // The USD pool is Venice's monthly subscription credits (use-it-or-lose-it
 // at the billing cycle). Each night spends balance ÷ days-until-cycle-reset,
@@ -31,6 +41,11 @@ import { readFile, writeFile, readdir, appendFile, mkdir } from "fs/promises";
 import { spawn } from "child_process";
 import path from "path";
 import os from "os";
+// Unlike the pool helpers (kept as local copies on purpose), the Civitai
+// fetch and the rewrite are shared with chart-art via lib/ — every use here
+// is wrapped in a fallback so a lib regression can't kill a burn night.
+import { fetchChart, aiwdmRatingFor } from "../lib/civitai.js";
+import { rewriteAsNaturalLanguage } from "../lib/prompts.js";
 
 const HOME = os.homedir();
 const ENV_FILE = path.join(HOME, ".config/diem-burner/env");
@@ -50,6 +65,13 @@ const AIWDM_DB = "aiwdm-db";
 const DEFAULT_MIN_SCORE = 7;
 const DEFAULT_MIN_PROMPT_CHARS = 40;
 const WRANGLER_TIMEOUT_MS = 60_000; // a hung query must not eat the burn window
+
+// Civitai side of the pool: today's Most Reactions chart at the API page
+// max. Rating range overridable via CIVITAI_MAX_RATING / CIVITAI_MIN_RATING
+// (pg|pg13|r|x|xxx) and CIVITAI_PERIOD in the env file.
+const CIVITAI_LIMIT = 200;
+const CIVITAI_DEFAULT_PERIOD = "day";
+const CIVITAI_DEFAULT_MAX_RATING = "r";
 
 // All gpt-image-2 (switched from seedream-v5-pro 2026-08-01), always at LOW
 // quality (0.02 DIEM at 1K vs 0.26 at the model's default high) — Petter
@@ -202,22 +224,69 @@ async function filePromptPool() {
   return files.map((f) => ({ promptArg: f, label: path.basename(f), source: "file" }));
 }
 
-// aiwdm first; the ~/prompts file pool only as fallback so a Cloudflare
-// hiccup never kills an unattended burn night.
-async function promptPool(minScore, minChars) {
-  try {
-    const entries = await fetchAiwdmPrompts(minScore, minChars);
-    if (entries.length > 0) return shuffle(entries);
-    log(`aiwdm pool empty (score >= ${minScore}, > ${minChars} chars) — falling back to ${PROMPTS_DIR}`);
-  } catch (err) {
-    log(`aiwdm prompt query failed (${err.message}) — falling back to ${PROMPTS_DIR}`);
-  }
-  return shuffle(await filePromptPool());
+// Civitai chart-of-the-day entries. needsRewrite marks them for the lazy
+// natural-language rewrite at generation time (rewriting 200 prompts for a
+// ~12-image night would be waste).
+async function fetchCivitaiPrompts() {
+  const entries = await fetchChart({
+    period: process.env.CIVITAI_PERIOD || CIVITAI_DEFAULT_PERIOD,
+    maxRating: process.env.CIVITAI_MAX_RATING || CIVITAI_DEFAULT_MAX_RATING,
+    minRating: process.env.CIVITAI_MIN_RATING || undefined,
+    limit: CIVITAI_LIMIT,
+  });
+  return entries.map((e) => ({
+    promptArg: e.prompt,
+    label: `civitai:${e.id} (${e.likes} likes, ${e.levelLabel})`,
+    source: "civitai",
+    aiwdmRating: aiwdmRatingFor(e.level),
+    needsRewrite: true,
+  }));
 }
 
-function runVenice(promptArg, format) {
+// Fetch both sources once per run; each phase interleaves fresh shuffles.
+// A failed source just leaves its half empty — only when BOTH fail does the
+// ~/prompts file pool take over, so no single outage kills a burn night.
+async function loadPromptSources(minScore, minChars) {
+  let aiwdm = [];
+  try {
+    aiwdm = await fetchAiwdmPrompts(minScore, minChars);
+    if (aiwdm.length === 0) log(`aiwdm pool empty (score >= ${minScore}, > ${minChars} chars)`);
+  } catch (err) {
+    log(`aiwdm prompt query failed (${err.message})`);
+  }
+  let civitai = [];
+  try {
+    civitai = await fetchCivitaiPrompts();
+    if (civitai.length === 0) log("civitai chart returned no usable prompts");
+  } catch (err) {
+    log(`civitai chart fetch failed (${err.message})`);
+  }
+  if (aiwdm.length === 0 && civitai.length === 0) {
+    log(`both prompt sources empty — falling back to ${PROMPTS_DIR}`);
+    return { aiwdm, civitai, file: await filePromptPool() };
+  }
+  return { aiwdm, civitai, file: [] };
+}
+
+// 50/50 mix: shuffle each source separately, then alternate picks so the
+// head of the pool draws evenly from both regardless of their sizes. Entry
+// objects are shared across phases so a cached rewrite survives re-pooling.
+function buildPool({ aiwdm, civitai, file }) {
+  if (file.length > 0) return shuffle([...file]);
+  const a = shuffle([...aiwdm]);
+  const b = shuffle([...civitai]);
+  const out = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+  }
+  return out;
+}
+
+function runVenice(promptArg, format, aiwdmRating) {
   return new Promise((resolve) => {
     const cliArgs = ["--prompt", promptArg, "--model", GPT_IMAGE, "--format", format, "--resolution", RESOLUTION, "--quality", GPT_QUALITY, "--aiwdm-tags", "diem-burner"];
+    if (aiwdmRating) cliArgs.push("--aiwdm-rating", aiwdmRating);
     const child = spawn(VENICE_BIN, cliArgs, {
       stdio: "inherit",
       env: {
@@ -309,7 +378,21 @@ async function burnPool({ pool, budget, imageCost, prompts, nextEpoch }) {
     }
 
     log(`[${pool}] image ${images + 1}/${MAX_IMAGES} · ${GPT_IMAGE} ${GPT_QUALITY} · ${format} · ${entry.label} · budget ${budget.toFixed(4)}`);
-    const exitCode = await runVenice(entry.promptArg, format);
+
+    // Civitai prompts get the natural-language rewrite on first use; the
+    // result is cached on the entry so the USD phase never pays twice.
+    let promptArg = entry.rewritten || entry.promptArg;
+    if (entry.needsRewrite && !entry.rewritten) {
+      try {
+        promptArg = await rewriteAsNaturalLanguage({ prompt: entry.promptArg, rating: entry.aiwdmRating || "R" });
+        entry.rewritten = promptArg;
+        log(`[${pool}] rewrote → "${promptArg.slice(0, 100)}"`);
+      } catch (err) {
+        log(`[${pool}] rewrite failed (${err.message}) — using the stripped prompt`);
+      }
+    }
+
+    const exitCode = await runVenice(promptArg, format, entry.aiwdmRating);
 
     // The real charge comes from re-reading the balance, not from the estimate.
     let after = budget - imageCost;
@@ -330,7 +413,7 @@ async function burnPool({ pool, budget, imageCost, prompts, nextEpoch }) {
       pool,
       prompt_source: entry.source,
       prompt_ref: entry.label,
-      prompt_excerpt: entry.source === "aiwdm" ? entry.promptArg.slice(0, 120) : undefined,
+      prompt_excerpt: entry.source === "file" ? undefined : promptArg.slice(0, 120),
       model: GPT_IMAGE,
       quality: GPT_QUALITY,
       format,
@@ -389,12 +472,17 @@ async function main() {
   const minScore = Number(process.env.AIWDM_MIN_SCORE) >= 1 ? Number(process.env.AIWDM_MIN_SCORE) : DEFAULT_MIN_SCORE;
   const minChars = Number(process.env.AIWDM_MIN_PROMPT_CHARS) >= 1 ? Number(process.env.AIWDM_MIN_PROMPT_CHARS) : DEFAULT_MIN_PROMPT_CHARS;
 
-  const prompts = await promptPool(minScore, minChars);
+  const sources = await loadPromptSources(minScore, minChars);
+  const prompts = buildPool(sources);
   if (prompts.length === 0) {
-    console.error(`[diem-burner] no prompts: aiwdm pool unavailable and no .txt files in ${PROMPTS_DIR}`);
+    console.error(`[diem-burner] no prompts: aiwdm + civitai unavailable and no .txt files in ${PROMPTS_DIR}`);
     process.exit(1);
   }
-  log(`${prompts.length} prompt(s) in the pool (source: ${prompts[0].source})`);
+  log(
+    sources.file.length > 0
+      ? `prompt pool: ${sources.file.length} file prompt(s) (fallback)`
+      : `prompt pool: ${sources.aiwdm.length} aiwdm + ${sources.civitai.length} civitai, 50/50 interleave`,
+  );
 
   const diemImages = await burnPool({ pool: "DIEM", budget: diem, imageCost, prompts, nextEpoch });
 
@@ -436,7 +524,7 @@ async function main() {
 
   let usdImages = 0;
   if (usdBudget > 0) {
-    usdImages = await burnPool({ pool: "USD", budget: usdBudget, imageCost, prompts: shuffle([...prompts]), nextEpoch });
+    usdImages = await burnPool({ pool: "USD", budget: usdBudget, imageCost, prompts: buildPool(sources), nextEpoch });
   }
 
   if (!DRY_RUN) {

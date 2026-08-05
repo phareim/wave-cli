@@ -69,9 +69,10 @@ xai/        index.js, cli.js, config.js — direct x.ai images/generations ("ima
 tools/      replay.js (wave-replay), balance.js (wave-balance), history.js (wave-history),
             random-art.mjs (random-prompt dispatcher, see "random-art" below),
             chart-art.mjs (Civitai top-reacted-prompts dispatcher, see "chart-art" below),
-            diem-burner.mjs (nightly leftover-DIEM spender; prompts from the aiwdm D1
-            (score >= 7, > 40 chars) with ~/prompts as fallback; no bin entry — run by
-            the diem-burner.timer systemd user unit, see README "DIEM burner")
+            diem-burner.mjs (nightly leftover-DIEM spender; prompts 50/50 from the
+            aiwdm D1 (score >= 7, > 40 chars) and Civitai's day chart (via lib/civitai,
+            rewritten at pick time), ~/prompts only when both fail; no bin entry — run
+            by the diem-burner.timer systemd user unit, see README "DIEM burner")
 ```
 
 ### CLI Entry Points (package.json bin)
@@ -105,9 +106,11 @@ shuffle-without-replacement), `--gpt`, `--prompt <file>`, `--list`, `--dry-run`.
 - **Test seams** (`tests/random-art.test.js`): `HOME=<tmpdir>` redirects the pool + env file,
   `RANDOM_ART_CHILD=<script>` replaces the spawned child (venice smoke mode can't simulate
   failure/moderation).
-- **diem-burner shares no code with it** by design: the burner keeps its own copies of the
-  pool helpers (it spends real money unattended) — don't migrate it to `lib/prompt-pool.js`
-  without a supervised nightly run.
+- **diem-burner keeps its own copies of the pool helpers** by design (it spends real money
+  unattended) — don't migrate it to `lib/prompt-pool.js` without a supervised nightly run.
+  It DOES import `lib/civitai.js` + `lib/prompts.js` for its Civitai half (since
+  2026-08-05), but every lib call there is wrapped in a fallback (source drops out of the
+  mix / stripped prompt used) so a lib regression can't kill a burn night.
 
 ### chart-art (`tools/chart-art.mjs`)
 
