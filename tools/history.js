@@ -153,14 +153,28 @@ const loadAiwdmStems = async () => {
     }
     if (!apiUrl) return null;
 
-    const grab = async (route) => {
-      const res = await fetch(`${apiUrl}${route}`, { signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status} on ${route}`);
-      return res.json();
+    // Page with limit+cursor: the unbounded /images list is ~19 MB and
+    // intermittently exceeds the worker's resource limits (503).
+    const grabAll = async (type, extraParams) => {
+      const items = [];
+      let cursor = null;
+      do {
+        const params = new URLSearchParams({ ...extraParams, limit: "200" });
+        if (cursor) params.set("cursor", cursor);
+        const res = await fetch(`${apiUrl}/${type}?${params}`, { signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status} on /${type}`);
+        const json = await res.json();
+        items.push(...(json?.[type] || []));
+        cursor = json?.has_more ? json.next_cursor : null;
+      } while (cursor);
+      return items;
     };
-    const [videos, images] = await Promise.all([grab("/videos"), grab("/images?includeR=true")]);
+    const [videos, images] = await Promise.all([
+      grabAll("videos", { includeR: "true" }),
+      grabAll("images", { includeR: "true" }),
+    ]);
     const stems = new Set();
-    for (const media of [...(videos?.videos || []), ...(images?.images || [])]) {
+    for (const media of [...videos, ...images]) {
       if (media.filename) stems.add(path.parse(media.filename).name);
     }
     if (DEBUG) console.log(`aiwdm index: ${stems.size} filenames`);
