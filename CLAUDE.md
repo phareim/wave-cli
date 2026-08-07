@@ -201,7 +201,7 @@ xai specifics: response is JSON with `b64_json` per image (decoded via mime-deri
 2. local filename match in the output dir;
 3. aiwdm's own upload-time dedup (filename+size, thumbnail hash) as the backstop.
 
-`--force` bypasses 1–2; `--dry-run` reports without acting; `--local` writes sidecars instead of uploading. Imported blobs have `imported_via: "wave-history"` and `generated_at` = the prediction's `created_at`. The documented history response carries no `input` echo, but when the API does return `record.input`, its `prompt`/`negative_prompt`/`seed`/`size`/`aspect_ratio`/`resolution`/`duration` pass through into the blob and the aiwdm description (best effort); prompt-less imports stay valid but can't be fully replayed.
+`--force` bypasses 1–2; `--dry-run` reports without acting; `--local` writes sidecars instead of uploading. Imported blobs have `imported_via: "wave-history"` and `generated_at` = the prediction's `created_at`. The documented history response carries no `input` echo, but when the API does return `record.input`, its `prompt`/`negative_prompt`/`seed`/`size`/`aspect_ratio`/`resolution`/`duration` pass through into the blob and the aiwdm description (best effort); prompt-less imports stay valid but can't be fully replayed. Prompt-less imports additionally get the aiwdm tag `generated-prompt` (added 2026-08-07): their description is written by the Venice vision model at upload time, and the tag marks it as AI-written rather than the original generation prompt (the 241 pre-existing prompt-less imports were backfilled with the tag directly in D1 the same day).
 
 ### API Response Handling
 

@@ -287,11 +287,18 @@ const uploadHistory = async (items, options) => {
       execution_time_ms: record.executionTime,
     } : null;
 
+    // Prompt-less imports get auto-described at aiwdm upload; tag them so the
+    // AI-written description is distinguishable from a real generation prompt.
+    const publishOptions = input.prompt ? options : {
+      ...options,
+      aiwdmTags: [options.aiwdmTags, "generated-prompt"].filter(Boolean).join(","),
+    };
+
     await publishOutputs(savedPaths, metadataBlob, {
       sourceTag: "wavespeed",
       modelTag: modelInfo?.metadata?.display_name || record.model,
       prompt: input.prompt,
-      options,
+      options: publishOptions,
       smoke: SMOKE_MODE,
     });
     uploaded++;
